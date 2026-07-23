@@ -11,7 +11,7 @@ const Database = [
 
 async function Logic(req, res) {
   const { username, email } = req.body;
-
+  console.log('Masuk login')
   try {
     // 💡 AMBIL DARI process.env DI DALAM FUNGSI (Pasti terbaca oleh Vercel)
     const RAHASIA_GW = 'RAHASIA_GW';
