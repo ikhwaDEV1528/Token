@@ -14,6 +14,7 @@ async function ChekingAdmin(req, res) {
 
      console.log('ALL HEADERS RECEIVED:', req.headers); // 🔍 Biar kelihatan di log Vercel
     if (!headerPath) {
+      console.log('header kosong' + headerPath)
       return res.status(400).json({ error: 'Header path wajib diisi!' });
     }
 
