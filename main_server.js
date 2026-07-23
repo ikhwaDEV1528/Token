@@ -7,7 +7,7 @@ const app = express();
 
 // 1. CORS Fix: Hapus trailing slash '/' di akhir URL Netlify!
 app.use(cors({
-    origin: 'https://fetoken.netlify.app', 
+    origin: 'https://token-phi-dun.vercel.app/', 
     credentials: true
 })); 
 
@@ -18,7 +18,7 @@ app.use('/server_login', login);
 
 // 2. Vercel Fix: Jalankan app.listen HANYA jika bukan di environment Vercel
 if (!process.env.VERCEL) {
-    const port = process.env.PORT || 4000;
+    const port =  4000;
     app.listen(port, () => console.log('BE JALAN DI PORT ' + port));
 }
 
