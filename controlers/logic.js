@@ -81,7 +81,8 @@ async function Logic(req, res) {
 
   } catch (err) {
     console.error('Error pada Logic Controller:', err);
-    return res.status(500).json({ error: err.message || 'Internal Server Error' });
+  // 💡 Samakan key-nya jadi 'message' agar frontend gampang bacanya
+      return res.status(500).json({ message: err.message || 'Internal Server Error' });
   }
 }
 
