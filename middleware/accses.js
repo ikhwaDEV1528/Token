@@ -6,7 +6,7 @@ dotenv.config(); // 2. Panggil dengan tanda kurung ()
 const accsesToken = (req, res, next) => {
   try {
     // 💡 Dipindahkan ke dalam fungsi + Fallback Hardcode Cadangan
-    const RAHASIA_GW = process.env.RAHASIA || process.env.RAHASIA_GW || 'kuncirahasiasuper12345';
+    const RAHASIA_GW = 'RAHASIA_GW'
 
     // Gunakan optional chaining (?.) agar tidak crash jika cookie kosong
     const tokenAccses = req.cookies?.accses_token;

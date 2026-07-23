@@ -7,7 +7,7 @@ dotenv.config();
 async function ChekingAdmin(req, res) {
   try {
     // 💡 1. Ambil Secret di dalam fungsi + Fallback Hardcode Cadangan
-    const RAHASIA_GW = process.env.RAHASIA || process.env.RAHASIA_GW || 'kuncirahasiasuper12345';
+    const RAHASIA_GW = 'RAHASIA_GW'
 
     // 1. Ambil & validasi header path agar tidak crash
     const headerPath = req.headers['path'] || '';

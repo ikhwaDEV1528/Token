@@ -7,7 +7,7 @@ dotenv.config();
 async function cheking_route(req, res, next) {
   try {
     // 💡 Dipindahkan ke dalam fungsi + Fallback Hardcode Cadangan
-    const RAHASIA_GW = process.env.RAHASIA || process.env.RAHASIA_GW || 'kuncirahasiasuper12345';
+    const RAHASIA_GW = 'RAHASIA_GW'
 
     const { route } = req.body;
 
