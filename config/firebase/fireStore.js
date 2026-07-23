@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from 'firebase-admin/firestore.js';
 
 const serviceAccountEnv = process.env.FIREBASE_SERVICE_ACCOUNT;
 
