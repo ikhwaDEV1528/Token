@@ -6,6 +6,10 @@ dotenv.config();
 
 async function ChekingAdmin(req, res) {
   try {
+  const {headerPath} = req.body;
+  if(!headerPath) {
+    return res.status(404).json({message:'PATH KONTOL'})
+  }
    res.status(200).json({message:'VERCELL KONTOLLL'})
   } catch (err) {
     console.error('Error pada ChekingAdmin:', err);
