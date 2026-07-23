@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv'; // 1. Import dotenv
 
 dotenv.config(); // 2. Panggil dengan tanda kurung ()
-const RAHASIA_GW = process.env.RAHASIA_GW;
+const RAHASIA = process.env.RAHASIA_GW;
 
 const accsesToken = (req, res, next) => {
   try {

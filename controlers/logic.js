@@ -4,7 +4,7 @@ import { db } from '../config/firebase/fireStore.js';
 
 dotenv.config(); // 2. Panggil dotenv dengan benar
 
-const RAHASIA_GW = process.env.RAHASIA_GW;
+const RAHASIA = process.env.RAHASIA_GW;
 
 const Database = [
   { username: 'ikhwan', email: 'ikhwan@gmail.com', role: 'User', user_id: 123 },
