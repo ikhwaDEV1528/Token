@@ -5,31 +5,44 @@ import cookieParser from 'cookie-parser';
 
 const app = express();
 
-// 💡 List origin yang diizinkan (BEBAS GARIS MIRING DI AKHIR)
+// 💡 1. Wajib untuk Vercel Serverless & Express-Rate-Limit
+app.set('trust proxy', 1);
+
+// 💡 2. List domain yang diizinkan (Tanpa trailing slash '/')
 const allowedOrigins = [
   'https://fetoken.netlify.app',
   'http://localhost:3000',
   'http://localhost:4000'
 ];
 
-app.use(cors({
-    origin: function (origin, callback) {
-        // Izinkan jika origin sesuai list, atau jika request tanpa origin (seperti Fetch/Middleware)
-        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.netlify.app')) {
-            callback(null, true);
-        } else {
-            callback(null, true); // Fallback true saat dev
-        }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'cookie', 'path']
-})); 
+// 💡 3. Preflight & CORS Handler Manual (Kebal Vercel & Browser)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
 
-app.use(express.json()); // Wajib ada supaya req.body tidak kosong
+  // Izinkan origin jika cocok / dari Netlify / request Server-to-Server (tanpa origin)
+  if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.netlify.app')) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  // Ditambahkan 'x-path' biar header custom dari Next.js gak dibuang
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, cookie, Cookie, path, x-path, X-Requested-With');
+
+  // Langsung jawab OK untuk Preflight OPTIONS dari browser
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  next();
+});
+
+app.use(express.json()); 
 app.use(cookieParser());
 
-// 💡 Logger sederhana buat mantau request masuk di Vercel Logs
+// 💡 4. Logger buat intip request masuk di Vercel Logs
 app.use((req, res, next) => {
     console.log(`[BE HIT] ${req.method} ${req.url}`);
     next();
@@ -37,11 +50,10 @@ app.use((req, res, next) => {
 
 app.use('/server_login', login);
 
-// Vercel Fix: Jalankan app.listen HANYA jika bukan di environment Vercel
+// 💡 5. Vercel Fix: Jalankan app.listen HANYA jika bukan di Vercel
 if (!process.env.VERCEL) {
     const port = 4000;
     app.listen(port, () => console.log('BE JALAN DI PORT ' + port));
 }
 
-// WAJIB DI-EXPORT UNTUK VERCEL SERVERLESS
 export default app;
