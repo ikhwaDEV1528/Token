@@ -10,7 +10,7 @@ async function ChekingAdmin(req, res) {
 
     // 1. Ambil & validasi header path
   // 💡 Cek huruf kecil, kapital, atau alternatif nama header
-    const headerPath = req.headers['path'] || req.headers['x-path'] || req.headers['Path'] || '';
+   const {headerPath} = req.body;
 
      console.log('ALL HEADERS RECEIVED:', req.headers); // 🔍 Biar kelihatan di log Vercel
     if (!headerPath) {
