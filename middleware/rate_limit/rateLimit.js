@@ -1,7 +1,7 @@
 import rateLimit from "express-rate-limit"
 
 const limit = rateLimit({
-    windowMs: 5 * 60 * 1000,
+    windowMs: 1 * 60 * 1000,
     max: 5,
     // Tambahkan 'req' di depan 'res' agar urutannya benar
     handler: (req, res) => {
