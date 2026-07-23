@@ -1,15 +1,11 @@
 import rateLimit from "express-rate-limit"
 
-const limit = rateLimit({
-    windowMs: 1 * 60 * 1000,
-    max: 5,
-    // Tambahkan 'req' di depan 'res' agar urutannya benar
-    handler: (req, res) => {
-        res.status(429).json({ message: 'Terlalu banyak aksi!' }); 
-        // Note: 429 adalah status code standar untuk Too Many Requests
-    },
-    standardHeaders: true,
-    legacyHeaders: false
+import rateLimit from 'express-rate-limit';
+
+const limiter = rateLimit({
+	windowMs: 15 * 60 * 1000,
+	max: 100,
+	validate: { xForwardedForHeader: false }, // 💡 MATIKAN VALIDASI INI BIAR GAK ERROR DI VERCEL
 });
 
 export default limit;
