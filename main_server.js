@@ -10,10 +10,9 @@ app.set('trust proxy', 1);
 
 // 💡 2. List domain yang diizinkan (Tanpa trailing slash '/')
 const allowedOrigins = [
-  'https://fetoken.netlify.app',
-  'http://localhost:3000',
-  'http://localhost:4000'
-];
+    'https://fetoken.vercel.app', 
+    'http://localhost:3000'
+  ];
 
 // 💡 3. Preflight & CORS Handler Manual (Kebal Vercel & Browser)
 app.use((req, res, next) => {
