@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv'; // 1. Tambahkan import dotenv
 
 dotenv.config();
-const RAHASIA = process.env.RAHASIA_GW;
+const RAHASIA_GW = process.env.RAHASIA;
 
 async function cheking_route(req, res, next) {
   try {

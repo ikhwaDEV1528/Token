@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import { db } from '../config/firebase/fireStore.js';
 
 dotenv.config();
-const RAHASIA = process.env.RAHASIA_GW;
+const RAHASIA_GW = process.env.RAHASIA;
 
 async function ChekingAdmin(req, res) {
   try {
