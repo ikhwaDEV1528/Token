@@ -9,7 +9,10 @@ async function ChekingAdmin(req, res) {
     const RAHASIA_GW = process.env.RAHASIA || 'RAHASIA_GW';
 
     // 1. Ambil & validasi header path
-    const headerPath = req.headers['path'] || '';
+  // 💡 Cek huruf kecil, kapital, atau alternatif nama header
+    const headerPath = req.headers['path'] || req.headers['x-path'] || req.headers['Path'] || '';
+
+     console.log('ALL HEADERS RECEIVED:', req.headers); // 🔍 Biar kelihatan di log Vercel
     if (!headerPath) {
       return res.status(400).json({ error: 'Header path wajib diisi!' });
     }
