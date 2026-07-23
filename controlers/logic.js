@@ -14,7 +14,7 @@ async function Logic(req, res) {
 
   try {
     // 💡 AMBIL DARI process.env DI DALAM FUNGSI (Pasti terbaca oleh Vercel)
-    const RAHASIA_GW = process.env.RAHASIA || process.env.RAHASIA_GW || 'kunci_rahasia_cadangan_123';
+    const RAHASIA_GW = 'RAHASIA_GW';
 
     // Cari user berdasarkan username
     const Search = Database.find(item => item.username === username);
