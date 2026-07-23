@@ -1,10 +1,8 @@
 import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv'; // 1. Import dotenv
+import dotenv from 'dotenv';
 import { db } from '../config/firebase/fireStore.js';
 
-dotenv.config(); // 2. Panggil dotenv dengan benar
-
-const RAHASIA_GW = process.env.RAHASIA;
+dotenv.config();
 
 const Database = [
   { username: 'ikhwan', email: 'ikhwan@gmail.com', role: 'User', user_id: 123 },
@@ -15,6 +13,9 @@ async function Logic(req, res) {
   const { username, email } = req.body;
 
   try {
+    // 💡 AMBIL DARI process.env DI DALAM FUNGSI (Pasti terbaca oleh Vercel)
+    const RAHASIA_GW = process.env.RAHASIA || process.env.RAHASIA_GW || 'kunci_rahasia_cadangan_123';
+
     // Cari user berdasarkan username
     const Search = Database.find(item => item.username === username);
 
@@ -29,7 +30,7 @@ async function Logic(req, res) {
     } else if (Search.role === 'User') {
       redirect = '/User/Home';
     } else {
-      redirect = '/Driver/Home'; // Disamakan formatnya agar split '/' aman
+      redirect = '/Driver/Home';
     }
 
     const payload = {
@@ -43,19 +44,19 @@ async function Logic(req, res) {
     const TokenAccses = jwt.sign(payload, RAHASIA_GW, { expiresIn: '1m' });
     const TokenReload = jwt.sign(payload, RAHASIA_GW, { expiresIn: '5m' });
 
-    // Opsi konfigurasi Cookie dinamis (aman untuk localhost & Render)
+    // Opsi konfigurasi Cookie dinamis
     const isProduction = process.env.NODE_ENV === 'production';
     const cookieOptions = {
       httpOnly: true,
       secure: isProduction,
-      sameSite: isProduction ? 'none' : 'lax', // Diperlukan jika FE & BE beda domain
+      sameSite: isProduction ? 'none' : 'lax',
       maxAge: 10 * 60 * 1000
     };
 
     res.cookie('accses_token', TokenAccses, cookieOptions);
     res.cookie('refresh_token', TokenReload, cookieOptions);
 
-    // Ambil kata kunci halaman dari URL redirect (misal: 'Dashboard' atau 'Home')
+    // Ambil kata kunci halaman dari URL redirect
     const pathHalaman = redirect.split('/')[2];
 
     const sesion_user = `${payload.user_id}_${payload.username}`;
@@ -67,7 +68,7 @@ async function Logic(req, res) {
       username: payload.username,
       user_id: payload.user_id,
       Home: pathHalaman === 'Home',
-      Dashboard: pathHalaman === 'Dashboard', // Perbaikan typo 'Dahsboard'
+      Dashboard: pathHalaman === 'Dashboard',
       Checkout: false,
       Stok: false
     });
@@ -81,8 +82,7 @@ async function Logic(req, res) {
 
   } catch (err) {
     console.error('Error pada Logic Controller:', err);
-  // 💡 Samakan key-nya jadi 'message' agar frontend gampang bacanya
-      return res.status(500).json({ message: err.message || 'Internal Server Error' });
+    return res.status(500).json({ message: err.message || 'Internal Server Error' });
   }
 }
 
