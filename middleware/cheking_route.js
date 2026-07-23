@@ -3,10 +3,12 @@ import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv'; // 1. Tambahkan import dotenv
 
 dotenv.config();
-const RAHASIA_GW = process.env.RAHASIA;
 
 async function cheking_route(req, res, next) {
   try {
+    // 💡 Dipindahkan ke dalam fungsi + Fallback Hardcode Cadangan
+    const RAHASIA_GW = process.env.RAHASIA || process.env.RAHASIA_GW || 'kuncirahasiasuper12345';
+
     const { route } = req.body;
 
     // 2. Validasi agar tidak crash jika route kosong

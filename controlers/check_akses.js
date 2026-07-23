@@ -3,10 +3,12 @@ import dotenv from 'dotenv';
 import { db } from '../config/firebase/fireStore.js';
 
 dotenv.config();
-const RAHASIA_GW = process.env.RAHASIA;
 
 async function ChekingAdmin(req, res) {
   try {
+    // 💡 1. Ambil Secret di dalam fungsi + Fallback Hardcode Cadangan
+    const RAHASIA_GW = process.env.RAHASIA || process.env.RAHASIA_GW || 'kuncirahasiasuper12345';
+
     // 1. Ambil & validasi header path agar tidak crash
     const headerPath = req.headers['path'] || '';
     if (!headerPath) {
@@ -83,7 +85,7 @@ async function ChekingAdmin(req, res) {
       return res.status(403).json({ error: 'Akses ditolak! Anda bukan User.' });
     }
 
-    // 5. Cek Dokumen Sesi di Firestore (Cukup 1 kali panggil!)
+    // 5. Cek Dokumen Sesi di Firestore
     const sessionDocId = `${decoded.user_id}_${decoded.username}`;
     const sessionRef = db.collection('sesion_user').doc(sessionDocId);
     const doc = await sessionRef.get();

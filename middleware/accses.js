@@ -2,10 +2,12 @@ import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv'; // 1. Import dotenv
 
 dotenv.config(); // 2. Panggil dengan tanda kurung ()
-const RAHASIA_GW = process.env.RAHASIA;
 
 const accsesToken = (req, res, next) => {
   try {
+    // 💡 Dipindahkan ke dalam fungsi + Fallback Hardcode Cadangan
+    const RAHASIA_GW = process.env.RAHASIA || process.env.RAHASIA_GW || 'kuncirahasiasuper12345';
+
     // Gunakan optional chaining (?.) agar tidak crash jika cookie kosong
     const tokenAccses = req.cookies?.accses_token;
 
@@ -48,7 +50,7 @@ const accsesToken = (req, res, next) => {
       // Pasang cookie baru
       res.cookie('accses_token', AccsesTokenBaru, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production', // Otomatis true saat ter-deploy di Render
+        secure: process.env.NODE_ENV === 'production',
         maxAge: 10 * 60 * 1000
       });
 
