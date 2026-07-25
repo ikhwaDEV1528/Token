@@ -13,8 +13,7 @@ const allowedOrigins = [
     'https://fetoken.vercel.app', 
     'http://localhost:3000'
   ];
-
-// 💡 3. Preflight & CORS Handler Manual (Kebal Vercel & Browser)
+  
 app.use((req, res, next) => {
   const origin = req.headers.origin;
 
@@ -27,10 +26,9 @@ app.use((req, res, next) => {
 
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  // Ditambahkan 'x-path' biar header custom dari Next.js gak dibuang
+  // Ditambahkan 'x-path' biar header custo
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, cookie, Cookie, path, x-path, X-Requested-With');
 
-  // Langsung jawab OK untuk Preflight OPTIONS dari browser
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }

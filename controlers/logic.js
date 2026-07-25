@@ -11,28 +11,35 @@ const Database = [
 
 async function Logic(req, res) {
   const { username, email } = req.body;
+
   console.log('Masuk login')
+
   try {
     // 💡 AMBIL DARI process.env DI DALAM FUNGSI (Pasti terbaca oleh Vercel)
     const RAHASIA_GW = 'RAHASIA_GW';
 
     // Cari user berdasarkan username
+    console.log('Mencoba mencari user...')
     const Search = Database.find(item => item.username === username);
 
     if (!Search) {
-      return res.status(404).json({ message: 'User not found!' });
+      console.log('Tidak ada user yang ditemukan')
+      return res.status(404).json({ message: 'User not found!' , status:404});
     }
 
     // Tentukan halaman redirect berdasarkan role
+    console.log('User ditemukan! , mengecek role anda...')
     let redirect;
     if (Search.role === 'Admin') {
       redirect = '/Admin/Dashboard';
     } else if (Search.role === 'User') {
       redirect = '/User/Home';
     } else {
-      redirect = '/Driver/Home';
+      redirect = 'no/Driver/Home';
     }
-
+    
+    console.log(`ROLE:${Search.role}`)
+    console.log('Sedang membuat token...')
     const payload = {
       username: Search.username,
       email: Search.email,
@@ -41,11 +48,12 @@ async function Logic(req, res) {
     };
 
     // Make Access & Refresh Token
-    const TokenAccses = jwt.sign(payload, RAHASIA_GW, { expiresIn: '1m' });
-    const TokenReload = jwt.sign(payload, RAHASIA_GW, { expiresIn: '5m' });
+    const TokenAccses = jwt.sign(payload, RAHASIA_GW, { expiresIn: '10m' });
+    const TokenReload = jwt.sign(payload, RAHASIA_GW, { expiresIn: '20m' });
 
     // Opsi konfigurasi Cookie dinamis
     const isProduction = process.env.NODE_ENV === 'production';
+    
     const cookieOptions = {
       httpOnly: true,
       secure: true,
@@ -59,19 +67,19 @@ async function Logic(req, res) {
     // Ambil kata kunci halaman dari URL redirect
     const pathHalaman = redirect.split('/')[2];
 
-    const sesion_user = `${payload.user_id}_${payload.username}`;
-    const Alamat = db.collection('sesion_user').doc(sesion_user);
+    // const sesion_user = `${payload.user_id}_${payload.username}`;
+    // const Alamat = db.collection('sesion_user').doc(sesion_user);
 
-    // Simpan ke Firestore
-    await Alamat.set({
-      sesion_id: sesion_user,
-      username: payload.username,
-      user_id: payload.user_id,
-      Home: pathHalaman === 'Home',
-      Dashboard: pathHalaman === 'Dashboard',
-      Checkout: false,
-      Stok: false
-    });
+    // // Simpan ke Firestore
+    // await Alamat.set({
+    //   sesion_id: sesion_user,
+    //   username: payload.username,
+    //   user_id: payload.user_id,
+    //   Home: pathHalaman === 'Home',
+    //   Dashboard: pathHalaman === 'Dashboard',
+    //   Checkout: false,
+    //   Stok: false
+    // });
 
     console.log('Berhasil membuat sesi user & token');
 
