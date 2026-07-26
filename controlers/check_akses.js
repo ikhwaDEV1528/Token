@@ -92,56 +92,56 @@ async function ChekingAdmin(req, res) {
 
       if(pathName.split('/')[1] == 'Admin' && decode_accses_token.role == 'Admin' ) {
          console.log('Anda admin')
-        // const ref = db.collection('sesion_user').doc(`${decode_accses_token.user_id}_${decode_accses_token.username}`);
-        // const snap = await ref.get();
+        const ref = db.collection('sesion_user').doc(`${decode_accses_token.user_id}_${decode_accses_token.username}`);
+        const snap = await ref.get();
 
-        // if(!snap.exists) {
-        //   console.log('Sesi tidak ditemukan! , silahkan login kembali');
-        //   return res.status(402).json({
-        //     message:'Sesion Undefined!',
-        //     status:402,
-        //     navigasi:'/'
-        //   })
-        // }
+        if(!snap.exists) {
+          console.log('Sesi tidak ditemukan! , silahkan login kembali');
+          return res.status(402).json({
+            message:'Sesion Undefined!',
+            status:402,
+            navigasi:'/'
+          })
+        }
 
-        // if(!snap.data()[pathName.slice('/')[2]]) {
-        //   console.log('Route halaman sebelum nya belum dilalui!')
-        //   return res.status(402).json({
-        //     message:'Lalui Route sebelum nya!',
-        //     status:402,
-        //     navigasi:isRiderect
-        //   })
-        // }
+        if(!snap.data()[pathName.slice('/')[2]]) {
+          console.log('Route halaman sebelum nya belum dilalui!')
+          return res.status(402).json({
+            message:'Lalui Route sebelum nya!',
+            status:402,
+            navigasi:isRiderect
+          })
+        }
 
-        return res.status(200).json({message:'ok'})
+       return res.status(200).json({message:'Hak akses dan Sesion terpenuhi!'})
 
       }
 
 
       if(decode_accses_token.role == 'User' && pathName.split('/')[1] == 'User' ) {
          console.log('Anda user')
-        // const ref = db.collection('sesion_user').doc(`${decode_accses_token.user_id}_${decode_accses_token.username}`);
-        // const snap = await ref.get();
+        const ref = db.collection('sesion_user').doc(`${decode_accses_token.user_id}_${decode_accses_token.username}`);
+        const snap = await ref.get();
 
-        // if(!snap.exists) {
-        //   console.log('Sesi tidak ditemukan! , silahkan login kembali');
-        //   return res.status(402).json({
-        //     message:'Sesion Undefined!',
-        //     status:402,
-        //     navigasi:'/'
-        //   })
-        // }
+        if(!snap.exists) {
+          console.log('Sesi tidak ditemukan! , silahkan login kembali');
+          return res.status(402).json({
+            message:'Sesion Undefined!',
+            status:402,
+            navigasi:'/'
+          })
+        }
 
-        // if(!snap.data()[pathName.split('/')[2]]) {
-        //   console.log('Route halaman sebelum nya belum dilalui!')
-        //   return res.status(402).json({
-        //     message:'Lalui Route sebelum nya!',
-        //     status:402,
-        //     navigasi:isRiderect
-        //   })
-        // }
+        if(!snap.data()[pathName.split('/')[2]]) {
+          console.log('Route halaman sebelum nya belum dilalui!')
+          return res.status(402).json({
+            message:'Lalui Route sebelum nya!',
+            status:402,
+            navigasi:isRiderect
+          })
+        }
 
-        return res.status(200).json({message:'ok'})
+       return res.status(200).json({message:'Hak akses dan Sesion terpenuhi!'})
 
       }
       
@@ -159,28 +159,28 @@ async function ChekingAdmin(req, res) {
 
     if(pathName.split('/')[1] == 'Admin' && decode_accses_token.role == 'Admin') {
        console.log('Anda admin!')
-      // const ref = db.collection('sesion_user').doc(`${decode_accses_token.user_id}_${decode_accses_token.username}`);
-      // const snap = await ref.get();
+      const ref = db.collection('sesion_user').doc(`${decode_accses_token.user_id}_${decode_accses_token.username}`);
+      const snap = await ref.get();
 
-      // if(!snap.exists) {
-      //   console.log('Sesi tidak ditemukan! , silahkan login kembali');
-      //   return res.status(402).json({
-      //     message:'Sesion Undefined!',
-      //     status:402,
-      //     navigasi:'/'
-      //   })
-      // }
+      if(!snap.exists) {
+        console.log('Sesi tidak ditemukan! , silahkan login kembali');
+        return res.status(402).json({
+          message:'Sesion Undefined!',
+          status:402,
+          navigasi:'/'
+        })
+      }
 
-      // if(!snap.data()[pathName.split('/')[2]]) {
-      //   console.log('Route halaman sebelum nya belum dilalui!')
-      //   return res.status(402).json({
-      //     message:'Lalui Route sebelum nya!',
-      //     status:402,
-      //     navigasi:isRiderect
-      //   })
-      // }
+      if(!snap.data()[pathName.split('/')[2]]) {
+        console.log('Route halaman sebelum nya belum dilalui!')
+        return res.status(402).json({
+          message:'Lalui Route sebelum nya!',
+          status:402,
+          navigasi:isRiderect
+        })
+      }
 
-      return res.status(200).json({message:'ok'})
+      return res.status(200).json({message:'Hak akses dan Sesion terpenuhi!'})
    }
 
 
@@ -189,28 +189,28 @@ async function ChekingAdmin(req, res) {
 
    if(decode_accses_token.role == 'User' && pathName.split('/')[1] == 'User' ) {
       console.log('Anda user')
-      // const ref = db.collection('sesion_user').doc(`${decode_accses_token.user_id}_${decode_accses_token.username}`);
-      // const snap = await ref.get();
+      const ref = db.collection('sesion_user').doc(`${decode_accses_token.user_id}_${decode_accses_token.username}`);
+      const snap = await ref.get();
 
-      // if(!snap.exists) {
-      // console.log('Sesi tidak ditemukan! , silahkan login kembali');
-      // return res.status(402).json({
-      //   message:'Sesion Undefined!',
-      //   status:402,
-      //   navigasi:'/'
-      //   })
-      // };
+      if(!snap.exists) {
+      console.log('Sesi tidak ditemukan! , silahkan login kembali');
+      return res.status(402).json({
+        message:'Sesion Undefined!',
+        status:402,
+        navigasi:'/'
+        })
+      };
 
-      // if(!snap.data()[pathName.split('/')[2]]) {
-      //   console.log('Route halaman sebelum nya belum dilalui!')
-      //   return res.status(402).json({
-      //     message:'Lalui Route sebelum nya!',
-      //     status:402,
-      //     navigasi:isRiderect
-      //   })
-      // }
+      if(!snap.data()[pathName.split('/')[2]]) {
+        console.log('Route halaman sebelum nya belum dilalui!')
+        return res.status(402).json({
+          message:'Lalui Route sebelum nya!',
+          status:402,
+          navigasi:isRiderect
+        })
+      }
 
-      return res.status(200).json({message:'ok'})
+      return res.status(200).json({message:'Hak akses dan Sesion terpenuhi!'})
 
     }
       
