@@ -67,19 +67,19 @@ async function Logic(req, res) {
     // Ambil kata kunci halaman dari URL redirect
     const pathHalaman = redirect.split('/')[2];
 
-    // const sesion_user = `${payload.user_id}_${payload.username}`;
-    // const Alamat = db.collection('sesion_user').doc(sesion_user);
+    const sesion_user = `${payload.user_id}_${payload.username}`;
+    const Alamat = db.collection('sesion_user').doc(sesion_user);
 
-    // // Simpan ke Firestore
-    // await Alamat.set({
-    //   sesion_id: sesion_user,
-    //   username: payload.username,
-    //   user_id: payload.user_id,
-    //   Home: pathHalaman === 'Home',
-    //   Dashboard: pathHalaman === 'Dashboard',
-    //   Checkout: false,
-    //   Stok: false
-    // });
+    // Simpan ke Firestore
+    await Alamat.set({
+      sesion_id: sesion_user,
+      username: payload.username,
+      user_id: payload.user_id,
+      Home: pathHalaman === 'Home',
+      Dashboard: pathHalaman === 'Dashboard',
+      Checkout: false,
+      Stok: false
+    });
 
     console.log('Berhasil membuat sesi user & token');
 
