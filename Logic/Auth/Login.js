@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
-import { db } from '../config/firebase/fireStore.js';
+
 
 dotenv.config();
 
@@ -9,16 +9,16 @@ const Database = [
   { username: 'wulan', email: 'wulan@gmail.com', role: 'Admin', user_id: 124 }
 ];
 
-async function Logic(req, res) {
+async function Login(req, res) {
   const { username, email } = req.body;
 
   console.log('Masuk login')
 
   try {
-    // 💡 AMBIL DARI process.env DI DALAM FUNGSI (Pasti terbaca oleh Vercel)
+   
     const RAHASIA_GW = 'RAHASIA_GW';
 
-    // Cari user berdasarkan username
+    
     console.log('Mencoba mencari user...')
     const Search = Database.find(item => item.username === username);
 
@@ -27,8 +27,9 @@ async function Logic(req, res) {
       return res.status(404).json({ message: 'User not found!' , status:404});
     }
 
-    // Tentukan halaman redirect berdasarkan role
+
     console.log('User ditemukan! , mengecek role anda...')
+
     let redirect;
     if (Search.role === 'Admin') {
       redirect = '/Admin/Dashboard';
@@ -40,6 +41,7 @@ async function Logic(req, res) {
     
     console.log(`ROLE:${Search.role}`)
     console.log('Sedang membuat token...')
+
     const payload = {
       username: Search.username,
       email: Search.email,
@@ -47,42 +49,25 @@ async function Logic(req, res) {
       role: Search.role
     };
 
-    // Make Access & Refresh Token
+   
     const TokenAccses = jwt.sign(payload, RAHASIA_GW, { expiresIn: '10m' });
     const TokenReload = jwt.sign(payload, RAHASIA_GW, { expiresIn: '20m' });
 
-    // Opsi konfigurasi Cookie dinamis
-    const isProduction = process.env.NODE_ENV === 'production';
+
+
     
     const cookieOptions = {
       httpOnly: true,
       secure: true,
       sameSite: 'none',
-      maxAge: 10 * 60 * 1000
+      maxAge: 10 * 60 * 1000,
+      path:'/'
     };
 
     res.cookie('accses_token', TokenAccses, cookieOptions);
     res.cookie('refresh_token', TokenReload, cookieOptions);
 
-    // Ambil kata kunci halaman dari URL redirect
-    const pathHalaman = redirect.split('/')[2];
-
-    const sesion_user = `${payload.user_id}_${payload.username}`;
-    const Alamat = db.collection('sesion_user').doc(sesion_user);
-
-    // Simpan ke Firestore
-    await Alamat.set({
-      sesion_id: sesion_user,
-      username: payload.username,
-      user_id: payload.user_id,
-      Home: pathHalaman === 'Home',
-      Dashboard: pathHalaman === 'Dashboard',
-      Checkout: false,
-      Stok: false
-    });
-
-    console.log('Berhasil membuat sesi user & token');
-
+    console.log(`Kamu berhasil login ke ${redirect}`)
     return res.status(200).json({
       message: `${payload.username}, Kamu dapat Token untuk Login!`,
       navigasi: redirect
@@ -94,5 +79,5 @@ async function Logic(req, res) {
   }
 }
 
-export default Logic;
+export default Login;
 

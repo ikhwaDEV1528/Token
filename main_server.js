@@ -1,5 +1,6 @@
 import express from 'express';
-import login from './endpoint/auth/login.js';
+import router_login from './Endpoint/auth/auth.js';
+import Token from './Endpoint/Token/Token.js';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 
@@ -45,7 +46,8 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use('/server_login', login);
+app.use('/server_login', router_login);
+app.use('/SERVER_CEK_TOKEN_ROLE' , Token)
 
 // 💡 5. Vercel Fix: Jalankan app.listen HANYA jika bukan di Vercel
 if (!process.env.VERCEL) {
