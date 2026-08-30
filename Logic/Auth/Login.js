@@ -69,7 +69,7 @@ async function Login(req, res) {
 
     console.log(`Kamu berhasil login ke ${redirect}`)
     return res.status(200).json({
-      message: `${payload.username}, Kamu dapat Token untuk Login!`,
+      message: `${payload.username}, Kamu dapat Token untuk Login! hauaha`,
       navigasi: redirect
     });
 
