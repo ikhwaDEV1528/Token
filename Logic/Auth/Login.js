@@ -1,83 +1,98 @@
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
-
+import db from '../../db.js';
 
 dotenv.config();
 
-const Database = [
-  { username: 'ikhwan', email: 'ikhwan@gmail.com', role: 'User', user_id: 123 },
-  { username: 'wulan', email: 'wulan@gmail.com', role: 'Admin', user_id: 124 }
-];
-
 async function Login(req, res) {
-  const { username, email } = req.body;
+  const { username, password } = req.body || {};
 
-  console.log('Masuk login')
+
+
+  // 1. Validasi Input Dasar
+  if (!username || !password) {
+    return res.status(400).json({ message: 'Username dan password wajib diisi!' });
+  }
 
   try {
-   
     const RAHASIA_GW = 'RAHASIA_GW';
 
-    
-    console.log('Mencoba mencari user...')
-    const Search = Database.find(item => item.username === username);
+    // 2. Query ke MySQL (Cari berdasarkan username saja agar lebih aman)
+    console.log('Mencoba mencari user di DB...');
+    const [rows] = await db.query(
+      `SELECT * FROM admin WHERE username = ?`, 
+      [username]
+    );
 
-    if (!Search) {
-      console.log('Tidak ada user yang ditemukan')
-      return res.status(404).json({ message: 'User not found!' , status:404});
+    // 3. Cek apakah user DITEMUKAN di DB
+    // (Jika rows kosong / length === 0, BERARTI USER GAK ADA)
+    if (!rows || rows.length === 0) {
+      console.log('❌ User tidak ditemukan di DB');
+      return res.status(404).json({ message: 'User tidak ditemukan!' });
     }
 
+    const user = rows[0]; // Ambil objek user dari baris pertama
 
-    console.log('User ditemukan! , mengecek role anda...')
+    // 4. Cek Password Secara Eksplisit
+    if (user.password !== password) {
+      console.log('❌ Password salah');
+      return res.status(401).json({ message: 'Username/Password salah!' });
+    }
 
+    // 5. Normalisasi Role (Cegah spasi / beda huruf besar kecil dari DB)
+    const roleUser = user.role
+   
+
+    // 6. Penentuan Navigasi Redirect
     let redirect;
-    if (Search.role === 'Admin') {
+    if (roleUser === 'Admin') {
       redirect = '/Admin/Dashboard';
-    } else if (Search.role === 'User') {
+    } else if (roleUser === 'Sales') {
       redirect = '/User/Home';
     } else {
-      redirect = 'no/Driver/Home';
+      redirect = '/Driver/Home';
     }
-    
-    console.log(`ROLE:${Search.role}`)
-    console.log('Sedang membuat token...')
 
+    // 7. JWT Payload & Cookie
     const payload = {
-      username: Search.username,
-      email: Search.email,
-      user_id: Search.user_id,
-      role: Search.role
+      id_admin: user.id_admin,
+      username: user.username,
+      role: roleUser
     };
 
-   
-    const TokenAccses = jwt.sign(payload, RAHASIA_GW, { expiresIn: '10m' });
-    const TokenReload = jwt.sign(payload, RAHASIA_GW, { expiresIn: '20m' });
+    const TokenAccses = jwt.sign(payload, RAHASIA_GW, { expiresIn: '15m' });
+    const TokenReload = jwt.sign(payload, RAHASIA_GW, { expiresIn: '2h' });
 
-
-
-    
     const cookieOptions = {
       httpOnly: true,
-      secure: true,
-      sameSite: 'none',
-      maxAge: 10 * 60 * 1000,
-      path:'/'
+      secure: false, // Set false untuk dev localhost
+      sameSite: 'lax',
+      maxAge: 15 * 60 * 1000,
+      path: '/'
+    };
+
+
+    const cookieOptionsRefresh = {
+      httpOnly: true,
+      secure: false, // Set false untuk dev localhost
+      sameSite: 'lax',
+      maxAge: 2 * 60 * 60 * 1000,
+      path: '/'
     };
 
     res.cookie('accses_token', TokenAccses, cookieOptions);
-    res.cookie('refresh_token', TokenReload, cookieOptions);
+    res.cookie('refresh_token', TokenReload, cookieOptionsRefresh);
 
-    console.log(`Kamu berhasil login ke ${redirect}`)
+    console.log(`🚀 Success Login! Navigasi ke: ${redirect}`);
     return res.status(200).json({
-      message: `${payload.username}, Kamu dapat Token untuk Login! hauaha`,
+      message: `${user.username}, berhasil login!`,
       navigasi: redirect
     });
 
   } catch (err) {
-    console.error('Error pada Logic Controller:', err);
+    console.error('❌ Error Catch Controller:', err);
     return res.status(500).json({ message: err.message || 'Internal Server Error' });
   }
 }
 
 export default Login;
-

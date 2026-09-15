@@ -20,8 +20,6 @@ async function Cheking_token_role(req, res) {
   }
 
 
-  
-
   try {
     const accses_token = req.cookies?.accses_token;
     const refresh_token = req.cookies?.refresh_token;
@@ -71,7 +69,7 @@ async function Cheking_token_role(req, res) {
         httpOnly: true,
         secure: false,
         sameSite: 'lax',
-        maxAge: 10 * 60 * 1000,
+        maxAge: 15 * 60 * 1000,
         path: '/'
       });
 
@@ -92,7 +90,7 @@ async function Cheking_token_role(req, res) {
 
   } catch (err) {
     console.error('Internal Server Error:', err);
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ message: err });
   }
 }
 

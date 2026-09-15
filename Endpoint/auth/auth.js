@@ -7,7 +7,7 @@ import Logout from '../../Logic/Auth/Logout.js';
 
 const auth = express.Router(); // <--- Pakai express.Router()
 
-auth.post('/LOGIN' , limit ,  parsingInput , Login)
+auth.post('/LOGIN' , limit  , parsingInput, Login)
 auth.delete('/LOGOUT' , Logout)
 
 

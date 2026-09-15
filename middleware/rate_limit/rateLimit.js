@@ -1,8 +1,8 @@
 import rateLimit from "express-rate-limit"
 
 const limit = rateLimit({
-    windowMs: 1 * 60 * 1000,
-    max: 50,
+    windowMs: 15 * 60 * 1000,
+    max: 5,
     // Tambahkan 'req' di depan 'res' agar urutannya benar
     handler: (req, res) => {
         res.status(429).json({ message: 'Terlalu banyak aksi!' }); 
