@@ -65,8 +65,8 @@ async function Login(req, res) {
 
     const cookieOptions = {
       httpOnly: true,
-      secure: false, // Set false untuk dev localhost
-      sameSite: 'none',
+      secure:true , // Set false untuk dev localhost
+      sameSite: 'none', // lax
       maxAge: 15 * 60 * 1000,
       path: '/'
     };
@@ -74,8 +74,8 @@ async function Login(req, res) {
 
     const cookieOptionsRefresh = {
       httpOnly: true,
-      secure: false, // Set false untuk dev localhost
-      sameSite: 'none',
+      secure: true, // Set false untuk dev localhost
+      sameSite: 'none', // lax
       maxAge: 2 * 60 * 60 * 1000,
       path: '/'
     };
