@@ -152,7 +152,7 @@ app.use(globalLimiter);
 // 🔒 TAMBAHAN: rate limiter lebih ketat khusus AUTH, cegah brute-force login
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 menit
-  max: 20,                  // 20 percobaan / IP / 15 menit
+  max: 50,                  // 20 percobaan / IP / 15 menit
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: 'Terlalu banyak percobaan login, coba lagi nanti' }
