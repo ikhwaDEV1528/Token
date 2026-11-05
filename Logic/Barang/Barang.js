@@ -1,16 +1,20 @@
 import { json } from "express";
-import db from "../../db.js";
+import { db } from '../../db.js';
 import { generateKodeBarang } from "./Buat_kode_barang.js";
 
 
 // AMBIL BARANG //
 export async function GET_BARANG(req, res) {
     const page = Math.max(1, parseInt(req.query?.page) || 1);
-    const limit = 10;
-    const offset = (page - 1) * limit;
+    const limit = Math.max(1, parseInt(req.query?.limit) || 20); // Mengikuti query limit dari FE (default 20)
+    const offset = (page - 1) * limit; // Rumus offset yang benar
+    const searchQuery = req.query?.search ? `%${req.query.search}%` : '%';
 
     try {
-        const [[{ total }]] = await db.query(`SELECT COUNT(*) AS total FROM barang`);
+        const [[{ total }]] = await db.query(
+            `SELECT COUNT(*) AS total FROM barang WHERE nama_barang LIKE ? OR kode_barang LIKE ?`,
+            [searchQuery, searchQuery]
+        );
 
         const querySQL = `
             SELECT 
@@ -19,11 +23,11 @@ export async function GET_BARANG(req, res) {
                 b.harga_dasar,
                 b.persentase_diskon_distributor,
                 b.persentase_fee_harga_jual,
-                b.harga_net_distributor,
                 b.harga_jual_produk_ke_pelanggan,
                 b.margin,
                 b.stok_pcs,
                 b.stok_min,
+                b.ada_fitur_bonus, -- <--- [2. DITAMBAHKAN DI SINI]
                 CASE 
                     WHEN COUNT(bs.id) = 0 THEN JSON_ARRAY()
                     ELSE JSON_ARRAYAGG(
@@ -38,9 +42,11 @@ export async function GET_BARANG(req, res) {
                 END AS list_satuan
             FROM (
                 SELECT kode_barang, nama_barang, harga_dasar, persentase_diskon_distributor, 
-                       persentase_fee_harga_jual, harga_net_distributor, 
-                       harga_jual_produk_ke_pelanggan, margin, stok_pcs, stok_min
+                       persentase_fee_harga_jual, 
+                       harga_jual_produk_ke_pelanggan, margin, stok_pcs, stok_min,
+                       ada_fitur_bonus -- <--- [1. DITAMBAHKAN DI SINI]
                 FROM barang 
+                WHERE nama_barang LIKE ? OR kode_barang LIKE ?
                 ORDER BY kode_barang ASC 
                 LIMIT ? OFFSET ?
             ) b
@@ -52,17 +58,27 @@ export async function GET_BARANG(req, res) {
             GROUP BY 
                 b.kode_barang, b.nama_barang, b.harga_dasar, 
                 b.persentase_diskon_distributor, b.persentase_fee_harga_jual, 
-                b.harga_net_distributor, b.harga_jual_produk_ke_pelanggan, 
-                b.margin, b.stok_pcs, b.stok_min
+                b.harga_jual_produk_ke_pelanggan, 
+                b.margin, b.stok_pcs, b.stok_min,
+                b.ada_fitur_bonus -- <--- [3. DITAMBAHKAN DI SINI]
             ORDER BY b.kode_barang ASC
         `;
 
-        const [BARANG] = await db.query(querySQL, [limit, offset]);
+        // Pastikan diparsing ke Number murni agar MySQL tidak bingung
+        const [BARANG] = await db.query(querySQL, [
+            searchQuery, 
+            searchQuery, 
+            Number(limit), 
+            Number(offset)
+        ]);
 
         return res.status(200).json({
             message: 'Berhasil ambil barang',
             status: 200,
             barang: BARANG,
+            total,
+            page,
+            limit,
             totalPage: Math.ceil(total / limit)
         });
     } catch (err) {
@@ -73,7 +89,6 @@ export async function GET_BARANG(req, res) {
         });
     }
 }
-
 
 
 
@@ -149,7 +164,7 @@ export async function EDIT_BARANG(req, res) {
     // 6. QUERY 3: Processing & Validasi Bulk Update Eceran (Pack / PCS)
     const validEceran = list_satuan.filter((item) => {
       const isKarton = Number(item?.level) === 3 || (item?.nama_satuan || '').toUpperCase() === 'KARTON';
-      return item?.id && !isKarton && !isNaN(parseFloat(item?.harga_jual)) && parseFloat(item?.harga_jual) > 0;
+      return Number(item?.id) && !isKarton && !isNaN(parseFloat(item?.harga_jual)) && parseFloat(item?.harga_jual) > 0;
     });
 
     let warningEceran = null;
@@ -279,6 +294,42 @@ export async function TambahBarang(req,res) {
       err:err
     })
   }
+}
+
+
+export async function OpenBonus (req , res) {
+   const {kode_barang} = req.body;
+
+   try {
+    const [rows] = await db.query(`UPDATE barang SET ada_fitur_bonus = ? WHERE kode_barang = ?`,[1,kode_barang])
+    return res.status(200).json({
+      message:'Produk ini diterapkan BONUS!'
+    })
+   } catch (err){
+    console.log(err)
+    return res.status(500).json({
+      message:'Kesalahan internal server'
+    })
+   }
+}
+
+
+
+
+export async function CloseBonus (req , res) {
+   const {kode_barang} = req.body;
+
+   try {
+    const [rows] = await db.query(`UPDATE barang SET ada_fitur_bonus = ? WHERE kode_barang = ?`,[0,kode_barang])
+    return res.status(200).json({
+      message:'Produk ini tidak diterapkan Bonus!'
+    })
+   } catch (err){
+    console.log(err)
+    return res.status(500).json({
+      message:'Kesalahan internal server'
+    })
+   }
 }
 
 // // EDIT BARANG //

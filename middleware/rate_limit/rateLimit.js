@@ -1,6 +1,6 @@
 import rateLimit from "express-rate-limit"
 
-const limit = rateLimit({
+export const limit = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 50,
     // Tambahkan 'req' di depan 'res' agar urutannya benar
@@ -12,4 +12,3 @@ const limit = rateLimit({
     legacyHeaders: false
 });
 
-export default limit;

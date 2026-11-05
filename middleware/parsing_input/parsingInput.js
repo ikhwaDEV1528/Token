@@ -18,7 +18,7 @@
 // };
 
 
-const parsingInput = (req, res, next) => {
+export const parsingInput = (req, res, next) => {
     const { username, password } = req.body;
 
     // Pastikan tipe data string (cegah NoSQL injection via object/array)
@@ -55,4 +55,3 @@ const parsingInput = (req, res, next) => {
     return next();
 };
 
-export default parsingInput;

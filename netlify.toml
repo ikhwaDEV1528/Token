@@ -1,8 +1,8 @@
-
-
-
-  [build]
+[build]
   functions = "functions"
+
+[functions]
+  region = "ap-southeast-1"
 
 [[redirects]]
   from = "/*"

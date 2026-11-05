@@ -1,14 +1,15 @@
-
-
-// Fungsi generator kode faktur ringkas
-export function kode_faktur(sequenceNumber) {
+export function kode_faktur() {
   const date = new Date();
-  const yy = String(date.getFullYear()).slice(-2); // 26
-  const mm = String(date.getMonth() + 1).padStart(2, '0'); // 09
+  const yy = String(date.getFullYear()).slice(-2);
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
   
-  // Format sequence menjadi 4 digit (misal: 1 -> 0001)
-  const seq = String(sequenceNumber).padStart(4, '0');
+  // Pakai jam-menit-detik-milidetik + random 3 digit, drastis kurangi peluang bentrok
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mi = String(date.getMinutes()).padStart(2, '0');
+  const ss = String(date.getSeconds()).padStart(2, '0');
+  const ms = String(date.getMilliseconds()).padStart(3, '0');
+  const rand = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
   
-  return `INV-${yy}${mm}-${seq}`; // Output: INV-2609-0001
+  return `INV-${yy}${mm}${dd}-${hh}${mi}${ss}${ms}${rand}`;
 }
-

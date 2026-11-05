@@ -1,10 +1,11 @@
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
-import db from '../../db.js';
+import bcrypt from 'bcrypt'; // DIUBAH: tambah import
+import { db } from '../../db.js';
 
 dotenv.config();
 
-async function Login(req, res) {
+export async function Login(req, res) {
   const { username, password } = req.body || {};
 
 
@@ -15,7 +16,8 @@ async function Login(req, res) {
   }
 
   try {
-    const RAHASIA_GW = 'RAHASIA_GW';
+    const RAHASIA_GW = process.env.RAHASIA;
+
 
     // 2. Query ke MySQL (Cari berdasarkan username saja agar lebih aman)
     console.log('Mencoba mencari user di DB...');
@@ -34,7 +36,9 @@ async function Login(req, res) {
     const user = rows[0]; // Ambil objek user dari baris pertama
 
     // 4. Cek Password Secara Eksplisit
-    if (user.password !== password) {
+    // DIUBAH: pakai bcrypt.compare
+    const passwordCocok = await bcrypt.compare(password, user.password);
+    if (!passwordCocok) {
       console.log('❌ Password salah');
       return res.status(401).json({ message: 'Username/Password salah!' });
     }
@@ -48,7 +52,7 @@ async function Login(req, res) {
     if (roleUser === 'Admin') {
       redirect = '/Admin/Dashboard';
     } else if (roleUser === 'Sales') {
-      redirect = '/User/Home';
+      redirect = '/Admin/Dashboard';
     } else {
       redirect = '/Driver/Home';
     }
@@ -61,11 +65,11 @@ async function Login(req, res) {
     };
 
     const TokenAccses = jwt.sign(payload, RAHASIA_GW, { expiresIn: '15m' });
-    const TokenReload = jwt.sign(payload, RAHASIA_GW, { expiresIn: '2h' });
+    const TokenReload = jwt.sign(payload, RAHASIA_GW, { expiresIn: '3h' });
 
     const cookieOptions = {
       httpOnly: true,
-      secure:false , // Set false untuk dev localhost
+      secure:true , // Set false untuk dev localhost
       sameSite: 'lax', // lax
       maxAge: 15 * 60 * 1000,
       path: '/'
@@ -74,9 +78,9 @@ async function Login(req, res) {
 
     const cookieOptionsRefresh = {
       httpOnly: true,
-      secure: false, // Set false untuk dev localhost
+      secure: true, // Set false untuk dev localhost
       sameSite: 'lax', // lax
-      maxAge: 2 * 60 * 60 * 1000,
+      maxAge: 3 * 60 * 60 * 1000,
       path: '/'
     };
 
@@ -91,8 +95,6 @@ async function Login(req, res) {
 
   } catch (err) {
     console.error('❌ Error Catch Controller:', err);
-    return res.status(500).json({ message: err.message || 'Internal Server Error' });
+    return res.status(500).json({ message:` ${err.message} RAILWAY  FIX`|| 'Internal Server Error' });
   }
 }
-
-export default Login;

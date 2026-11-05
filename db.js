@@ -1,16 +1,26 @@
 import mysql from "mysql2/promise";
+import dotenv from 'dotenv';
 
-const db = mysql.createPool({
-  host: 'igqrd-9-154-220-124.run.pinggy-free.link',
+dotenv.config()
+
+
+const dbPassword = process.env.PASSWORD_DB !== undefined ? process.env.PASSWORD_DB : "";
+
+export const db = mysql.createPool({
+  host: process.env.HOST, 
   user: 'root', 
-  port:43165,     // Username MySQL (XAMPP/Laragon default: root)
+  port: process.env.PORT,     // Username MySQL (XAMPP/Laragon default: root)
   password: '',      // Password MySQL (default: kosong)
-  database: 'cv_bakhti_putra_pratama', // Sesuaikan nama database kamu
+  database: process.env.NAMA_DB, // Sesuaikan nama database kamu
   waitForConnections: true,
-  connectionLimit: 10,
-  multipleStatements:true
+  connectionLimit: 5,
+  multipleStatements:true,
+  dateStrings:true
 });
 
 
 
-export default db; 
+
+
+
+
