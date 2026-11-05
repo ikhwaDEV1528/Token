@@ -170,8 +170,9 @@ const SQL_REKAP_PENJUALAN_SALES = `
       SUM(u.baris_satuan_tidak_dikenal) AS baris_satuan_tidak_dikenal
     FROM (
       -- 1. PENJUALAN (GROSS DIPOTONG DISKON ITEM + DISKON GLOBAL PROPORSIONAL)
+    
       SELECT
-        pd.kode_barang,
+        pd.kode_barang COLLATE utf8mb4_general_ci AS kode_barang,
         SUM(pd.jumlah_keluar) AS qty_bulat,
         0 AS qty_retur_pcs,
         SUM(pd.jumlah_keluar * COALESCE(bs_jual.rasio_ke_pcs, 1)) AS qty_pcs_net,
@@ -204,7 +205,7 @@ const SQL_REKAP_PENJUALAN_SALES = `
 
       -- 2. RETUR (dibebankan ke sales faktur asal; fallback ke sales faktur tujuan)
       SELECT
-        rd.kode_barang,
+       rd.kode_barang COLLATE utf8mb4_general_ci AS kode_barang,
         0 AS qty_bulat,
         SUM(rd.qty_total_pcs) AS qty_retur_pcs,
         -SUM(rd.qty_total_pcs) AS qty_pcs_net,
