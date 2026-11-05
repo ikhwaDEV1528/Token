@@ -8,9 +8,9 @@ const dbPassword = process.env.PASSWORD_DB !== undefined ? process.env.PASSWORD_
 
 export const db = mysql.createPool({
   host: process.env.HOST, 
-  user: 'root', 
-  port: process.env.PORT,     // Username MySQL (XAMPP/Laragon default: root)
-  password: '',      // Password MySQL (default: kosong)
+  user: process.env.USER_DB, 
+  port: 3306,     // Username MySQL (XAMPP/Laragon default: root)
+  password: process.env.PASSWORD_DB,      // Password MySQL (default: kosong)
   database: process.env.NAMA_DB, // Sesuaikan nama database kamu
   waitForConnections: true,
   connectionLimit: 5,
