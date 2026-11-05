@@ -10,6 +10,6 @@ Suplier.get('/CARI_SUPLIER', CariSuplier);
 
 Suplier.get('/', listSuppliers);
 Suplier.post('/', CekRequestAkses, doubleCsrfProtection,  createSupplier);
-Suplier.put('/:id', CekRequestAkses , doubleCsrfProtection,  updateSupplier);
+Suplier.put('/:id', CekRequestAkses , updateSupplier);
 
 export default Suplier;
