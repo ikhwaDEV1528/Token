@@ -524,12 +524,25 @@ export async function ProsesPesanan(req, res) {
   if (diskonGlobal < 0 || diskonGlobal > total_kotor) {
     return res.status(400).json({ message: 'Diskon global tidak valid' });
   }
+
   if (bayar < 0) {
     return res.status(400).json({ message: 'Jumlah pembayaran tidak valid' });
   }
+
+  if(grand_total < 0) {
+    return res.status(400).json({message:'Jumlah grand total tidak valid!'})
+  }
+
+  if (bayar > grand_total) {   
+    return res.status(400).json({
+      message: `Jumlah pembayaran (${bayar}) melebihi total tagihan (${grand_total})`
+    });
+  }
   
   const sisaHutang = Math.max(grand_total - bayar, 0);
+
   const status_lunas = sisaHutang === 0 ? 'Lunas' : 'Belum lunas';
+  const syarat_pembayaran = sisaHutang === 0 ? 'CASH' : 'NET 12'
 
   // 3. Prepare Data Detail untuk Bulk Insert
   const valuesPenjualanDetail = dataListBarang.map(item => {
@@ -585,8 +598,8 @@ export async function ProsesPesanan(req, res) {
 
     await connection.query(
       `INSERT INTO penjualan_header 
-       (no_faktur, tgl_faktur, tanggal_pengiriman, jatuhtempo_faktur, id_admin, kode_pelanggan, dpp_total, ppn_persen, ppn_nominal, total_harga, grand_total, diskon_global, pembayaran, sisa_piutang, status, keterangan, sales) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (no_faktur, tgl_faktur, tanggal_pengiriman, jatuhtempo_faktur, id_admin, kode_pelanggan, dpp_total, ppn_persen, ppn_nominal, total_harga, grand_total, diskon_global, pembayaran, sisa_piutang, status, keterangan, sales, syarat_pembayaran) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? , ?)`,
       [
         kodeFaktur,
         tglFakturFormatted,
@@ -604,7 +617,8 @@ export async function ProsesPesanan(req, res) {
         sisaHutang,
         status_lunas,
         'Belum ada keterangan',
-        nama_sales
+        nama_sales,
+        syarat_pembayaran
       ]
     );
 
@@ -772,6 +786,7 @@ export async function AMBIL_FAKTUR_PENJUALAN(req, res) {
         COALESCE(pel.nama_pelanggan, 'Pelanggan Umum') AS nama_pelanggan,
         COALESCE(pel.alamat, '-') AS alamat_pelanggan, 
         pj.sales,
+        pj.syarat_pembayaran,
         pj.diskon_global AS diskon,
         COALESCE(pj.ppn_persen, 0) AS ppn, -- <-- TAMBAHKAN DI SINI
         IF(
@@ -819,6 +834,7 @@ export async function AMBIL_FAKTUR_PENJUALAN(req, res) {
         pel.nama_pelanggan,
         pel.alamat,
         pj.sales,
+        pj.syarat_pembayaran,
         pj.diskon_global,
         pj.ppn_persen -- <-- TAMBAHKAN DI SINI
      ORDER BY pj.tanggal_pengiriman DESC, pj.no_faktur DESC;
