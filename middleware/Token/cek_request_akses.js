@@ -104,6 +104,7 @@ export function CekRequestAkses(req, res, next) {
     // Yang wajib cuma refresh token. Access token boleh hilang
     // (browser menghapus cookie yang sudah lewat maxAge-nya).
     if (!refresh_token) {
+        console.log('Silahkan login kembali!')
         return res.status(401).json({
             message: 'Silahkan login kembali!',
             navigasi: '/'
@@ -115,6 +116,7 @@ export function CekRequestAkses(req, res, next) {
         // Tanpa ignoreExpiration: refresh token expired / palsu -> throw
         decode_refresh_token = jwt.verify(refresh_token, JWT_SECRET, { algorithms: ['HS256'] });
     } catch (err) {
+        console.log('Sesio berkahir')
         return res.status(401).json({
             message: 'Sesi berakhir, silahkan login kembali!',
             navigasi: '/'
@@ -122,6 +124,7 @@ export function CekRequestAkses(req, res, next) {
     }
 
     if (decode_refresh_token.role !== 'Admin') {
+        console.log('Anda bukan admin')
         return res.status(403).json({
             message: 'Anda bukan admin, silahkan login kembali!',
             navigasi: '/'

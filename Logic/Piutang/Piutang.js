@@ -1,3 +1,5 @@
+
+
 // ============================================================================
 // MODUL PIUTANG PELANGGAN (BE) — SATU FILE, 4 ENDPOINT
 //
@@ -21,6 +23,7 @@
 // nomor faktur, dan jumlah uang yang dibayarkan.
 // ============================================================================
 import { db } from "../../db.js";
+import { BuatNoBayar } from "./noBayar.js";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
@@ -401,18 +404,20 @@ function parseBayar(body) {
     };
 }
 
-async function buatNoBayar(conn, yyyymmdd) {
-    const [r] = await conn.query(
-        `INSERT INTO pembayaran_sequence (tanggal, last_seq) VALUES (?, 1)
-         ON DUPLICATE KEY UPDATE last_seq = LAST_INSERT_ID(last_seq + 1)`,
-        [yyyymmdd]
-    );
-    let seq;
-    if (r.affectedRows === 1) seq = 1;
-    else if (r.affectedRows === 2) seq = r.insertId;
-    else throw new Error(`Gagal membuat nomor bayar: affectedRows tidak terduga (${r.affectedRows})`);
-    return `BYR-${yyyymmdd}-${String(seq).padStart(4, '0')}`;
-}
+// async function buatNoBayar(conn, yyyymmdd) {
+//     const [r] = await conn.query(
+//         `INSERT INTO pembayaran_sequence (tanggal, last_seq) VALUES (?, 1)
+//          ON DUPLICATE KEY UPDATE last_seq = LAST_INSERT_ID(last_seq + 1)`,
+//         [yyyymmdd]
+//     );
+//     let seq;
+//     if (r.affectedRows === 1) seq = 1;
+//     else if (r.affectedRows === 2) seq = r.insertId;
+//     else throw new Error(`Gagal membuat nomor bayar: affectedRows tidak terduga (${r.affectedRows})`);
+//     return `BYR-${yyyymmdd}-${String(seq).padStart(4, '0')}`;
+// }
+
+
 
 export async function BAYAR_PIUTANG(req, res) {
     let payload;
@@ -462,7 +467,7 @@ export async function BAYAR_PIUTANG(req, res) {
         }
 
         // 3. header pembayaran
-        const noBayar = await buatNoBayar(conn, waktu.yyyymmdd);
+        const noBayar = await BuatNoBayar(conn, waktu.yyyymmdd);
         const [hdr] = await conn.query(
             `INSERT INTO pembayaran_piutang_header
                 (no_bayar, kode_pelanggan, tanggal_bayar, total_bayar, metode, catatan, dibuat_oleh, created_at)
@@ -555,6 +560,149 @@ export async function BAYAR_PIUTANG(req, res) {
 // Helper yang dipakai (sudah ada di file kamu): MAX_LEN_KODE, MAX_LEN_NO_FAKTUR,
 // ambilPaging, num, responError.
 // ============================================================================
+// export async function RIWAYAT_PEMBAYARAN(req, res) {
+//     try {
+//         const kode = String(req.query.kode_pelanggan ?? '').trim().slice(0, MAX_LEN_KODE);
+//         const noFaktur = String(req.query.no_faktur ?? '').trim().slice(0, MAX_LEN_NO_FAKTUR);
+//         const { page, limit, offset } = ambilPaging(req.query);
+
+//         // --- cabang 1: pembayaran piutang -------------------------------------
+//         const whereBayar = ['1 = 1'];
+//         const paramsBayar = [];
+//         // --- cabang 2: retur yang memotong piutang ------------------------------
+//         const whereRetur = ['r.jumlah_potong_piutang > 0'];
+//         const paramsRetur = [];
+
+//         if (kode) {
+//             whereBayar.push('h.kode_pelanggan = ?');
+//             paramsBayar.push(kode);
+//             whereRetur.push('ph.kode_pelanggan = ?');
+//             paramsRetur.push(kode);
+//         }
+//         if (noFaktur) {
+//             whereBayar.push(`EXISTS (SELECT 1 FROM pembayaran_piutang_detail dx
+//                                      WHERE dx.id_pembayaran = h.id AND dx.no_faktur = ?)`);
+//             paramsBayar.push(noFaktur);
+//             whereRetur.push('r.no_faktur = ?');
+//             paramsRetur.push(noFaktur);
+//         }
+
+//         const fromBayar = `FROM pembayaran_piutang_header h WHERE ${whereBayar.join(' AND ')}`;
+//         const fromRetur = `FROM retur_header r
+//                            INNER JOIN penjualan_header ph ON ph.no_faktur = r.no_faktur
+//                            WHERE ${whereRetur.join(' AND ')}`;
+//         const paramsGabung = [...paramsBayar, ...paramsRetur];
+
+//         const [[cnt], [rows]] = await Promise.all([
+//             db.query(
+//                 `SELECT (SELECT COUNT(*) ${fromBayar}) AS bayar,
+//                         (SELECT COUNT(*) ${fromRetur}) AS retur`,
+//                 paramsGabung
+//             ),
+//             db.query(
+//                 `SELECT u.jenis, u.ref_id, u.nomor, u.kode_pelanggan,
+//                         COALESCE(pl.nama_pelanggan, u.kode_pelanggan)       AS nama_pelanggan,
+//                         DATE_FORMAT(u.tgl, '%Y-%m-%d %H:%i:%s')             AS tanggal,
+//                         u.total, u.metode, u.catatan, u.dibuat_oleh, u.no_faktur_retur , u.no_faktur_lain,
+//                         u.dpp_total, u.ppn_persen, u.ppn_nominal, u.grand_total
+//                    FROM (
+//                          (SELECT 'PEMBAYARAN' AS jenis, h.id AS ref_id, h.no_bayar AS nomor,
+//                                  h.kode_pelanggan, h.tanggal_bayar AS tgl, h.total_bayar AS total,
+//                                  h.metode AS metode, h.catatan AS catatan, h.dibuat_oleh AS dibuat_oleh,
+//                                  NULL AS no_faktur_retur , NULL AS no_faktur_lain,
+//                                  0 AS dpp_total, 0 AS ppn_persen, 0 AS ppn_nominal, 0 AS grand_total
+//                             ${fromBayar})
+//                          UNION ALL
+//                          (SELECT 'RETUR' AS jenis, r.id AS ref_id, r.no_retur AS nomor,
+//                                  ph.kode_pelanggan, r.tanggal_retur AS tgl, r.jumlah_potong_piutang AS total,
+//                                  'RETUR' AS metode, r.catatan AS catatan, NULL AS dibuat_oleh,
+//                                  r.no_faktur AS no_faktur_retur , r.no_faktur_lain AS no_faktur_lain,
+//                                  IFNULL(r.dpp_total, 0) AS dpp_total,
+//                                  IFNULL(r.ppn_persen, 11) AS ppn_persen,
+//                                  IFNULL(r.ppn_nominal, 0) AS ppn_nominal,
+//                                  IFNULL(r.grand_total, r.jumlah_potong_piutang) AS grand_total
+//                             ${fromRetur})
+//                          ORDER BY tgl DESC, jenis DESC, ref_id DESC
+//                          LIMIT ? OFFSET ?
+//                         ) u
+//                     LEFT JOIN pelanggan pl ON pl.kode_pelanggan = u.kode_pelanggan
+//                   ORDER BY u.tgl DESC, u.jenis DESC, u.ref_id DESC`,
+//                 [...paramsGabung, limit, offset]
+//             )
+//         ]);
+
+//         // rincian per faktur hanya untuk baris pembayaran
+//         const detailMap = new Map();
+//         const idBayar = rows.filter((r) => r.jenis === 'PEMBAYARAN').map((r) => r.ref_id);
+//         if (idBayar.length > 0) {
+//             const [details] = await db.query(
+//                 `SELECT id_pembayaran, no_faktur, jumlah, sisa_sebelum, sisa_sesudah
+//                    FROM pembayaran_piutang_detail
+//                   WHERE id_pembayaran IN (?)
+//                   ORDER BY id`,
+//                 [idBayar]
+//             );
+//             for (const d of details) {
+//                 if (!detailMap.has(d.id_pembayaran)) detailMap.set(d.id_pembayaran, []);
+//                 detailMap.get(d.id_pembayaran).push({
+//                     no_faktur: d.no_faktur,
+//                     jumlah: num(d.jumlah),
+//                     sisa_sebelum: num(d.sisa_sebelum),
+//                     sisa_sesudah: num(d.sisa_sesudah)
+//                 });
+//             }
+//         }
+
+//         const total = num(cnt[0]?.bayar) + num(cnt[0]?.retur);
+//         return res.status(200).json({
+//             status: true,
+//             data: {
+//                 riwayat: rows.map((h) => {
+//                     const retur = h.jenis === 'RETUR';
+//                     const isReturSilang = retur && (h.no_faktur_lain && h.no_faktur_retur !== h.no_faktur_lain);
+
+//                     return {
+//                         jenis: h.jenis,
+//                         no_bayar: h.nomor,
+//                         no_retur: retur ? h.nomor : null,
+//                         kode_pelanggan: h.kode_pelanggan,
+//                         nama_pelanggan: h.nama_pelanggan,
+//                         tanggal_bayar: h.tanggal,
+//                         total_bayar: num(h.total),
+//                         metode: h.metode,
+//                         catatan: h.catatan,
+//                         dibuat_oleh: h.dibuat_oleh,
+//                         is_retur_silang: isReturSilang,
+//                         no_faktur_asli: retur ? h.no_faktur_retur : null,
+//                         no_faktur_lain: retur ? (h.no_faktur_lain || h.no_faktur_retur) : null,
+
+//                         // --- FIELD INI YANG TADI KETINGGALAN DI MAPPING JSON KANAN ---
+//                         dpp_total: retur ? num(h.dpp_total) : null,
+//                         ppn_persen: retur ? num(h.ppn_persen) : null,
+//                         ppn_nominal: retur ? num(h.ppn_nominal) : null,
+//                         grand_total: retur ? num(h.grand_total) : null,
+
+//                         rincian: retur
+//                             ? [{
+//                                 no_faktur: h.no_faktur_retur,
+//                                 no_faktur_asal_barang: h.no_faktur_lain || h.no_faktur_retur,
+//                                 jumlah: num(h.total),
+//                                 sisa_sebelum: null,
+//                                 sisa_sesudah: null
+//                             }]
+//                             : (detailMap.get(Number(h.ref_id)) || detailMap.get(String(h.ref_id)) || [])
+//                     };
+//                 }),
+//                 paging: { page, limit, total, total_page: Math.max(1, Math.ceil(total / limit)) }
+//             }
+//         });
+//     } catch (err) {
+//         return responError(res, err, 'RIWAYAT_PEMBAYARAN');
+//     }
+// }
+
+
+
 export async function RIWAYAT_PEMBAYARAN(req, res) {
     try {
         const kode = String(req.query.kode_pelanggan ?? '').trim().slice(0, MAX_LEN_KODE);
@@ -569,8 +717,12 @@ export async function RIWAYAT_PEMBAYARAN(req, res) {
         const paramsRetur = [];
 
         if (kode) {
-            whereBayar.push('h.kode_pelanggan = ?');
-            paramsBayar.push(kode);
+            // termasuk setoran DCR (kode_pelanggan = MULTI_TOKO) yang berisi faktur pelanggan ini
+            whereBayar.push(`(h.kode_pelanggan = ? OR EXISTS (
+                SELECT 1 FROM pembayaran_piutang_detail dk
+                  JOIN penjualan_header pk ON pk.no_faktur = dk.no_faktur
+                 WHERE dk.id_pembayaran = h.id AND pk.kode_pelanggan = ?))`);
+            paramsBayar.push(kode, kode);
             whereRetur.push('ph.kode_pelanggan = ?');
             paramsRetur.push(kode);
         }
@@ -627,15 +779,17 @@ export async function RIWAYAT_PEMBAYARAN(req, res) {
         ]);
 
         // rincian per faktur hanya untuk baris pembayaran
+        // (kalau filter pelanggan aktif, hanya faktur milik pelanggan itu yang ditampilkan)
         const detailMap = new Map();
         const idBayar = rows.filter((r) => r.jenis === 'PEMBAYARAN').map((r) => r.ref_id);
         if (idBayar.length > 0) {
             const [details] = await db.query(
-                `SELECT id_pembayaran, no_faktur, jumlah, sisa_sebelum, sisa_sesudah
-                   FROM pembayaran_piutang_detail
-                  WHERE id_pembayaran IN (?)
-                  ORDER BY id`,
-                [idBayar]
+                `SELECT d.id_pembayaran, d.no_faktur, d.jumlah, d.sisa_sebelum, d.sisa_sesudah
+                   FROM pembayaran_piutang_detail d
+                   ${kode ? 'JOIN penjualan_header pk ON pk.no_faktur = d.no_faktur AND pk.kode_pelanggan = ?' : ''}
+                  WHERE d.id_pembayaran IN (?)
+                  ORDER BY d.id`,
+                kode ? [kode, idBayar] : [idBayar]
             );
             for (const d of details) {
                 if (!detailMap.has(d.id_pembayaran)) detailMap.set(d.id_pembayaran, []);
@@ -655,15 +809,29 @@ export async function RIWAYAT_PEMBAYARAN(req, res) {
                 riwayat: rows.map((h) => {
                     const retur = h.jenis === 'RETUR';
                     const isReturSilang = retur && (h.no_faktur_lain && h.no_faktur_retur !== h.no_faktur_lain);
+                    const isDcr = !retur && h.kode_pelanggan === 'MULTI_TOKO';
+
+                    const rincianFinal = retur
+                        ? [{
+                            no_faktur: h.no_faktur_retur,
+                            no_faktur_asal_barang: h.no_faktur_lain || h.no_faktur_retur,
+                            jumlah: num(h.total),
+                            sisa_sebelum: null,
+                            sisa_sesudah: null
+                        }]
+                        : (detailMap.get(Number(h.ref_id)) || detailMap.get(String(h.ref_id)) || []);
 
                     return {
                         jenis: h.jenis,
                         no_bayar: h.nomor,
                         no_retur: retur ? h.nomor : null,
                         kode_pelanggan: h.kode_pelanggan,
-                        nama_pelanggan: h.nama_pelanggan,
+                        nama_pelanggan: isDcr ? 'Setoran DCR (Multi Toko)' : h.nama_pelanggan,
                         tanggal_bayar: h.tanggal,
-                        total_bayar: num(h.total),
+                        // DCR + filter pelanggan: tampilkan hanya porsi pelanggan ini
+                        total_bayar: isDcr && kode
+                            ? rincianFinal.reduce((a, x) => a + x.jumlah, 0)
+                            : num(h.total),
                         metode: h.metode,
                         catatan: h.catatan,
                         dibuat_oleh: h.dibuat_oleh,
@@ -671,21 +839,12 @@ export async function RIWAYAT_PEMBAYARAN(req, res) {
                         no_faktur_asli: retur ? h.no_faktur_retur : null,
                         no_faktur_lain: retur ? (h.no_faktur_lain || h.no_faktur_retur) : null,
 
-                        // --- FIELD INI YANG TADI KETINGGALAN DI MAPPING JSON KANAN ---
                         dpp_total: retur ? num(h.dpp_total) : null,
                         ppn_persen: retur ? num(h.ppn_persen) : null,
                         ppn_nominal: retur ? num(h.ppn_nominal) : null,
                         grand_total: retur ? num(h.grand_total) : null,
 
-                        rincian: retur
-                            ? [{
-                                no_faktur: h.no_faktur_retur,
-                                no_faktur_asal_barang: h.no_faktur_lain || h.no_faktur_retur,
-                                jumlah: num(h.total),
-                                sisa_sebelum: null,
-                                sisa_sesudah: null
-                            }]
-                            : (detailMap.get(Number(h.ref_id)) || detailMap.get(String(h.ref_id)) || [])
+                        rincian: rincianFinal
                     };
                 }),
                 paging: { page, limit, total, total_page: Math.max(1, Math.ceil(total / limit)) }

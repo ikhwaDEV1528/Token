@@ -7,7 +7,8 @@ dotenv.config()
 const dbPassword = process.env.PASSWORD_DB !== undefined ? process.env.PASSWORD_DB : "";
 
 
-// VPS ONLINE //
+// // VPS ONLINE //
+
 export const db = mysql.createPool({
   host: process.env.HOST, 
   user: process.env.USER_DB, 
@@ -21,7 +22,8 @@ export const db = mysql.createPool({
 });
 
 
-// // LOCALHOST TESTING //
+// LOCALHOST TESTING //
+
 // export const db = mysql.createPool({
 //   host: 'localhost', 
 //   user: 'root', 

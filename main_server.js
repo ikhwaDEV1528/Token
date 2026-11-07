@@ -116,6 +116,7 @@ import SuratJalan from './Endpoint/SuratJalan/SuratJalan.js';
 import RiwayatReturPenjualan from './Endpoint/RiwayatReturPenjualan/RiwayatReturPenjualan.js';
 import RiwayatReturPembelian from './Endpoint/RiwayatReturPembelian/RiwayatReturPembelian.js';
 import LaporanSales from './Endpoint/LaporanSales/LaporanSales.js';
+import Dashboard from './Endpoint/Dashboard/Dashboard.js';
 
 const app = express();
 
@@ -222,6 +223,7 @@ app.use('/SERVER_SURAT_JALAN', SuratJalan.default || SuratJalan);
 app.use('/SERVER_RIWAYAT_RETUR_PENJUALAN',RiwayatReturPenjualan.default || RiwayatReturPenjualan)
 app.use('/SERVER_RIWAYAT_RETUR_PEMBELIAN' , RiwayatReturPembelian.default || RiwayatReturPembelian)
 app.use('/SERVER_LAPORAN_SALES' , LaporanSales)
+app.use('/SERVER_DASH' , Dashboard)
 
 // 🔒 TAMBAHAN: 404 handler untuk route yang tidak terdaftar
 app.use((req, res) => {
