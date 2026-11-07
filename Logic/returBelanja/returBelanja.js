@@ -121,12 +121,22 @@ export async function CariNoFakturPembelian(req, res) {
                 });
             }
 
-            if (!listSatuans.some(s => s.nama_satuan.toUpperCase() === 'PCS')) {
-                listSatuans.push({
-                    nama_satuan: 'PCS',
-                    rasio_ke_pcs: 1,
-                    level: 99
-                });
+            // if (!listSatuans.some(s => s.nama_satuan.toUpperCase() === 'PCS')) {
+            //     listSatuans.push({
+            //         nama_satuan: 'PCS',
+            //         rasio_ke_pcs: 1,
+            //         level: 99
+            //     });
+            // }
+
+            // listSatuans.sort((a, b) => b.rasio_ke_pcs - a.rasio_ke_pcs);
+
+            // Hanya satuan yang sama atau lebih kecil dari satuan beli
+            listSatuans = listSatuans.filter(s => s.rasio_ke_pcs <= rasioBeliPcs);
+
+            // Fallback kalau master satuan kosong
+            if (listSatuans.length === 0) {
+                listSatuans.push({ nama_satuan: row.satuan_beli || 'PCS', rasio_ke_pcs: 1, level: 1 });
             }
 
             listSatuans.sort((a, b) => b.rasio_ke_pcs - a.rasio_ke_pcs);
@@ -371,7 +381,7 @@ function rbKirimError(res, err) {
 async function rbProses(conn, { noFaktur, catatan, items }, idAdmin) {
     const waktu = rbWaktuWIB();
 
- 
+
     // 🔴 KODE BARU (Ambil persen PPN juga):
     // 🔴 TAMBAHKAN IFNULL(diskon_faktur, 0) AS diskon_faktur
     const kolomHeader = 'id, no_faktur, supplier_id, subtotal, IFNULL(diskon, 0) AS diskon_faktur, IFNULL(ppn_persen, 0) AS ppn_persen, total_harga, sisa_hutang';
@@ -529,7 +539,7 @@ async function rbProses(conn, { noFaktur, catatan, items }, idAdmin) {
     }
 
 
-   
+
     // 4. HEADER + DETAIL RETUR --------------------------------------------------
 
     const [hasilHeader] = await conn.query(

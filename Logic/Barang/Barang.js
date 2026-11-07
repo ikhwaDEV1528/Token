@@ -28,6 +28,7 @@ export async function GET_BARANG(req, res) {
                 b.stok_pcs,
                 b.stok_min,
                 b.ada_fitur_bonus, -- <--- [2. DITAMBAHKAN DI SINI]
+                b.is_active,
                 CASE 
                     WHEN COUNT(bs.id) = 0 THEN JSON_ARRAY()
                     ELSE JSON_ARRAYAGG(
@@ -44,7 +45,8 @@ export async function GET_BARANG(req, res) {
                 SELECT kode_barang, nama_barang, harga_dasar, persentase_diskon_distributor, 
                        persentase_fee_harga_jual, 
                        harga_jual_produk_ke_pelanggan, margin, stok_pcs, stok_min,
-                       ada_fitur_bonus -- <--- [1. DITAMBAHKAN DI SINI]
+                       ada_fitur_bonus, -- <--- [1. DITAMBAHKAN DI SINI]
+                       is_active
                 FROM barang 
                 WHERE nama_barang LIKE ? OR kode_barang LIKE ?
                 ORDER BY kode_barang ASC 
@@ -60,7 +62,8 @@ export async function GET_BARANG(req, res) {
                 b.persentase_diskon_distributor, b.persentase_fee_harga_jual, 
                 b.harga_jual_produk_ke_pelanggan, 
                 b.margin, b.stok_pcs, b.stok_min,
-                b.ada_fitur_bonus -- <--- [3. DITAMBAHKAN DI SINI]
+                b.ada_fitur_bonus, -- <--- [3. DITAMBAHKAN DI SINI]
+                b.is_active
             ORDER BY b.kode_barang ASC
         `;
 
@@ -330,6 +333,54 @@ export async function CloseBonus (req , res) {
       message:'Kesalahan internal server'
     })
    }
+}
+
+
+export async function nonAktifBarang(req, res) {
+  const {kode_barang,nama_barang} = req.body;
+
+  if(!kode_barang || !nama_barang || nama_barang == ""){
+    return res.status(400).json({
+      message:'Kesalahan, Kode barang atau Nama barang tidakk ada!'
+    })
+  }
+
+  try {
+    const [rows] = await db.query(`UPDATE barang SET is_active = ? where kode_barang = ? AND nama_barang = ?`, [0, kode_barang, nama_barang])
+    return res.status(200).json({
+      message:'Berhasil Non Active barang!'
+    })
+  } catch (err) {
+    console.log(err)
+    return res.status(500).json({
+      message:'Kesalahan server',
+      status:500
+    })
+  }
+}
+
+
+export async function activeBarang(req , res) {
+  const {kode_barang,nama_barang} = req.body;
+
+  if(!kode_barang || !nama_barang || nama_barang == ""){
+    return res.status(400).json({
+      message:'Kesalahan, Kode barang atau Nama barang tidak ada!'
+    })
+  }
+
+  try {
+    const [rows] = await db.query(`UPDATE barang SET is_active = ? where kode_barang = ? AND nama_barang = ?`, [1, kode_barang, nama_barang])
+    return res.status(200).json({
+      message:'Berhasil Active barang!'
+    })
+  } catch (err) {
+    console.log(err)
+    return res.status(500).json({
+      message:'Kesalahan server',
+      status:500
+    })
+  }
 }
 
 // // EDIT BARANG //

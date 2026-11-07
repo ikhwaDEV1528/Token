@@ -4,6 +4,8 @@ import { getKewajibanRefund, selesaikanRefund } from "../../Logic/Refund/Refund.
 import { CekRequestAkses } from "../../middleware/Token/cek_request_akses.js";
 import { ubahKeteranganFaktur } from "../../Logic/Faktur/Faktur.js";
 import { doubleCsrfProtection } from "../../configurasiCrsf.js";
+import { TAMBAHITEMFAKTUR } from "../../Logic/Faktur/Faktur.js";
+import { HAPUSFAKTUR } from "../../Logic/Faktur/Faktur.js";
 
 const Faktur = express.Router();
 
@@ -12,5 +14,7 @@ Faktur.put('/EDIT_FAKTUR' ,CekRequestAkses , doubleCsrfProtection, EDITITEMFAKTU
 Faktur.get('/REFUND' , getKewajibanRefund)
 Faktur.post('/selesaikan-refund' ,CekRequestAkses , doubleCsrfProtection, selesaikanRefund)
 Faktur.post('/UBAH_KETERANGAN_FAKTUR', CekRequestAkses, doubleCsrfProtection, ubahKeteranganFaktur);
+Faktur.post('/TAMBAH_ITEM_FAKTUR', TAMBAHITEMFAKTUR);
+Faktur.post('/HAPUS_SEMUA_FAKTUR',CekRequestAkses, HAPUSFAKTUR);
 
 export default Faktur

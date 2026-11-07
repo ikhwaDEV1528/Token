@@ -67,6 +67,7 @@ export async function InputJualBarang(req, res) {
         b.persentase_diskon_distributor,
         b.persentase_fee_harga_jual,
         b.ada_fitur_bonus, -- <-- TAMBAHKAN INI
+        b.is_active,
 
         IF(
           COUNT(bs.id) = 0,
@@ -92,7 +93,8 @@ export async function InputJualBarang(req, res) {
           harga_jual_produk_ke_pelanggan,
           persentase_diskon_distributor,
           persentase_fee_harga_jual,
-          COALESCE(ada_fitur_bonus, 0) AS ada_fitur_bonus -- <-- TAMBAHKAN INI
+          COALESCE(ada_fitur_bonus, 0) AS ada_fitur_bonus, -- <-- TAMBAHKAN INI
+          COALESCE(is_active, 1) AS is_active
         FROM barang b
         WHERE ${whereClause}
         ORDER BY nama_barang ASC
@@ -111,8 +113,8 @@ export async function InputJualBarang(req, res) {
         b.harga_jual_produk_ke_pelanggan,
         b.persentase_diskon_distributor,
         b.persentase_fee_harga_jual,
-        b.ada_fitur_bonus -- <-- TAMBAHKAN INI
-
+        b.ada_fitur_bonus, -- <-- TAMBAHKAN INI
+        b.is_active
     `;
 
     let resultSearch;
@@ -200,386 +202,393 @@ export async function InputJualBarang(req, res) {
 // NOTE : NANTI GW MAU NAMBAHIN BLOCK KALO USER ITU STATUS BLOCK SEMOGA INGET //
 export async function ProsesPesanan(req, res) {
   try {
-  const {
-    dataListBarang,
-    nama_pelanggan,
-    tenggat_hutang,
-    tanggal_pengiriman: input_tgl_kirim, // Menerima tanggal pengiriman
-    diskon_global: input_diskon_global, // Menerima Diskon Global (Faktur)
-    ppn, // field baru ppn
-    total_dibayarkan_pelanggan,
-    kode_pelanggan,
-    id,
-    nama_sales
-  } = req.body || {};
+    const {
+      dataListBarang,
+      nama_pelanggan,
+      tenggat_hutang,
+      tanggal_pengiriman: input_tgl_kirim, // Menerima tanggal pengiriman
+      diskon_global: input_diskon_global, // Menerima Diskon Global (Faktur)
+      ppn, // field baru ppn
+      total_dibayarkan_pelanggan,
+      kode_pelanggan,
+      id,
+      nama_sales
+    } = req.body || {};
 
-  const id_admin = req.id_admin;
+    const id_admin = req.id_admin;
 
-  if (!id_admin || id_admin == "" || id_admin == null) {
-    return res.status(404).json({
-      message: 'id admin tidak ditemukan!'
-    })
-  }
-
-  if (!id || !nama_sales || nama_sales == "") {
-    console.log({ nama: nama_sales, id_sales: id })
-    return res.status(404).json({
-      message: 'Data Seles tidak lengkap mohon isi!'
-    })
-  }
-
-  if (!kode_pelanggan || kode_pelanggan == "" || kode_pelanggan == null) {
-    console.log({ nama: nama_sales, id_sales: id })
-    return res.status(404).json({
-      message: 'Kode pelanggan tidak lengkap mohon isi!'
-    })
-  }
-
-  // 1. Validasi Input
-  if (!dataListBarang || dataListBarang.length === 0 || !kode_pelanggan) {
-    return res.status(400).json({
-      message: 'Data barang dan pelanggan wajib diisi!',
-      status: 400
-    });
-  }
-
-  const level_satuan = { KARTON: 3, BAL: 3, BALL: 3, PACK: 2, PCS: 1 };
-
-  for (const item of dataListBarang) {
-
-    if (!item || item == null) {
-      return res.status(400).json({
-        status: "error",
-        message: 'item pada datalist barang kosong!'
-      });
-    }
-
-    const jumlah = Number(item?.jumlah);
-    const rasio = Number(item?.rasio_ke_pcs);
-    const harga = Number(item?.harga_satuan);
-    const qtyBonus = Number(item?.qty_bonus || 0); // Ambil qty_bonus
-
-    // OPTIMASI TAMBAHAN VALIDASI DARI IKHWAN //
-
-    const namaSatuanInput = String(item.nama_satuan || '').trim().toUpperCase();
-    const levelSatuanBarang = level_satuan[namaSatuanInput];
-
-    if (!levelSatuanBarang || levelSatuanBarang == undefined || levelSatuanBarang == null) {
-      return res.status(400).json({
-        message: 'Nama Satuan tidak valid / Tidak ada!'
+    if (!id_admin || id_admin == "" || id_admin == null) {
+      return res.status(404).json({
+        message: 'id admin tidak ditemukan!'
       })
     }
 
-    // OPTIMASI TAMBAHAN VALIDASI DARI IKHWAN //
+    if (!id || !nama_sales || nama_sales == "") {
+      console.log({ nama: nama_sales, id_sales: id })
+      return res.status(404).json({
+        message: 'Data Seles tidak lengkap mohon isi!'
+      })
+    }
 
-    if (!item?.kode_barang || String(item.kode_barang).trim() === '') {
+    if (!kode_pelanggan || kode_pelanggan == "" || kode_pelanggan == null) {
+      console.log({ nama: nama_sales, id_sales: id })
+      return res.status(404).json({
+        message: 'Kode pelanggan tidak lengkap mohon isi!'
+      })
+    }
+
+    // 1. Validasi Input
+    if (!dataListBarang || dataListBarang.length === 0 || !kode_pelanggan) {
       return res.status(400).json({
-        status: "error",
-        message: 'Ada barang dengan kode_barang kosong/tidak valid!'
+        message: 'Data barang dan pelanggan wajib diisi!',
+        status: 400
       });
     }
 
-    // PENYESUAIAN 1: Boleh jumlah = 0 asal ada qty_bonus > 0
-    if (!Number.isFinite(jumlah) || jumlah < 0 || (jumlah === 0 && qtyBonus <= 0)) {
-      return res.status(400).json({
-        status: "error",
-        message: `Jumlah pembelian/bonus untuk '${item.kode_barang}' tidak valid`
-      });
+    const level_satuan = { KARTON: 3, BAL: 3, BALL: 3, PACK: 2, PCS: 1 };
+
+    for (const item of dataListBarang) {
+
+      if (!item || item == null) {
+        return res.status(400).json({
+          status: "error",
+          message: 'item pada datalist barang kosong!'
+        });
+      }
+
+      const jumlah = Number(item?.jumlah);
+      const rasio = Number(item?.rasio_ke_pcs);
+      const harga = Number(item?.harga_satuan);
+      const qtyBonus = Number(item?.qty_bonus || 0); // Ambil qty_bonus
+
+      // OPTIMASI TAMBAHAN VALIDASI DARI IKHWAN //
+
+      const namaSatuanInput = String(item.nama_satuan || '').trim().toUpperCase();
+      const levelSatuanBarang = level_satuan[namaSatuanInput];
+
+      if (!levelSatuanBarang || levelSatuanBarang == undefined || levelSatuanBarang == null) {
+        return res.status(400).json({
+          message: 'Nama Satuan tidak valid / Tidak ada!'
+        })
+      }
+
+      // OPTIMASI TAMBAHAN VALIDASI DARI IKHWAN //
+
+      if (!item?.kode_barang || String(item.kode_barang).trim() === '') {
+        return res.status(400).json({
+          status: "error",
+          message: 'Ada barang dengan kode_barang kosong/tidak valid!'
+        });
+      }
+
+      // PENYESUAIAN 1: Boleh jumlah = 0 asal ada qty_bonus > 0
+      if (!Number.isFinite(jumlah) || jumlah < 0 || (jumlah === 0 && qtyBonus <= 0)) {
+        return res.status(400).json({
+          status: "error",
+          message: `Jumlah pembelian/bonus untuk '${item.kode_barang}' tidak valid`
+        });
+      }
+
+      const rawJumlah = String(item?.jumlah ?? '').trim();
+      if (!/^\d+$/.test(rawJumlah) || !Number.isFinite(jumlah) || jumlah < 0 || (jumlah === 0 && qtyBonus <= 0)) {
+        return res.status(400).json({
+          status: "error",
+          message: `Jumlah pembelian untuk '${item.kode_barang}' tidak valid (harus angka murni)`
+        });
+      }
+
+      if (!Number.isFinite(rasio) || rasio <= 0) {
+        return res.status(400).json({
+          status: "error",
+          message: `Rasio satuan untuk '${item.kode_barang}' tidak valid (harus angka lebih dari 0)`
+        });
+      }
+
+      // PENYESUAIAN 2: Boleh harga = 0 (untuk baris bonus/gratisan)
+      if (!Number.isFinite(harga) || harga < 0) {
+        return res.status(400).json({
+          status: "error",
+          message: `Harga satuan untuk '${item.kode_barang}' tidak valid`
+        });
+      }
+
+      const rawharga = String(item?.harga_satuan ?? '').trim();
+      if (!/^\d+$/.test(rawharga) || !Number.isFinite(harga) || harga < 0) {
+        return res.status(400).json({
+          status: "error",
+          message: `Harga pembelian untuk '${item.kode_barang}' tidak valid (harus angka murni 0 atau lebih)`
+        });
+      }
     }
 
-    const rawJumlah = String(item?.jumlah ?? '').trim();
-    if (!/^\d+$/.test(rawJumlah) || !Number.isFinite(jumlah) || jumlah < 0 || (jumlah === 0 && qtyBonus <= 0)) {
+
+    const [getBlockPelanggan] = await db.query(`SELECT block FROM pelanggan WHERE nama_pelanggan = ? AND kode_pelanggan = ?`, [nama_pelanggan, kode_pelanggan]);
+
+    if (getBlockPelanggan.length == 0) {
       return res.status(400).json({
-        status: "error",
-        message: `Jumlah pembelian untuk '${item.kode_barang}' tidak valid (harus angka murni)`
-      });
+        message: 'Tidak dapat menemukan Pelanggan'
+      })
     }
 
-    if (!Number.isFinite(rasio) || rasio <= 0) {
+    const isBlock = getBlockPelanggan[0]?.block;
+
+    if (isBlock == 1) {
       return res.status(400).json({
-        status: "error",
-        message: `Rasio satuan untuk '${item.kode_barang}' tidak valid (harus angka lebih dari 0)`
-      });
+        message: `Pelanggan atas nama ${nama_pelanggan} di BLOCK! , tidak bisa melakukan transaksi!`
+      })
     }
-
-    // PENYESUAIAN 2: Boleh harga = 0 (untuk baris bonus/gratisan)
-    if (!Number.isFinite(harga) || harga < 0) {
-      return res.status(400).json({
-        status: "error",
-        message: `Harga satuan untuk '${item.kode_barang}' tidak valid`
-      });
-    }
-
-    const rawharga = String(item?.harga_satuan ?? '').trim();
-    if (!/^\d+$/.test(rawharga) || !Number.isFinite(harga) || harga < 0) {
-      return res.status(400).json({
-        status: "error",
-        message: `Harga pembelian untuk '${item.kode_barang}' tidak valid (harus angka murni 0 atau lebih)`
-      });
-    }
-  }
-
-
-  const [getBlockPelanggan] = await db.query(`SELECT block FROM pelanggan WHERE nama_pelanggan = ? AND kode_pelanggan = ?`, [nama_pelanggan, kode_pelanggan]);
-
-  if (getBlockPelanggan.length == 0) {
-    return res.status(400).json({
-      message: 'Tidak dapat menemukan Pelanggan'
-    })
-  }
-
-  const isBlock = getBlockPelanggan[0]?.block;
-
-  if (isBlock == 1) {
-    return res.status(400).json({
-      message: `Pelanggan atas nama ${nama_pelanggan} di BLOCK! , tidak bisa melakukan transaksi!`
-    })
-  }
 
 
     //// VALIDASI HARGA & RASIO DARI DB (barang_satuan) ////
-  const kodeListPesanan = [...new Set(dataListBarang.map(i => String(i.kode_barang).trim()))];
+    const kodeListPesanan = [...new Set(dataListBarang.map(i => String(i.kode_barang).trim()))];
 
-  const [satuanRows] = await db.query(
-    `SELECT kode_barang, nama_satuan, rasio_ke_pcs, harga_jual
+    const [satuanRows] = await db.query(
+      `SELECT kode_barang, nama_satuan, rasio_ke_pcs, harga_jual
      FROM barang_satuan
      WHERE kode_barang IN (?)`,
-    [kodeListPesanan]
-  );
+      [kodeListPesanan]
+    );
 
-  const satuanMap = new Map(
-    satuanRows.map(r => [
-      `${String(r.kode_barang).trim()}|${String(r.nama_satuan).trim().toUpperCase()}`,
-      r
-    ])
-  );
+    const satuanMap = new Map(
+      satuanRows.map(r => [
+        `${String(r.kode_barang).trim()}|${String(r.nama_satuan).trim().toUpperCase()}`,
+        r
+      ])
+    );
 
-  for (const item of dataListBarang) {
-    const kode = String(item.kode_barang).trim();
-    const namaSatuan = String(item.nama_satuan).trim().toUpperCase();
-    const satuanDB = satuanMap.get(`${kode}|${namaSatuan}`);
+    for (const item of dataListBarang) {
+      const kode = String(item.kode_barang).trim();
+      const namaSatuan = String(item.nama_satuan).trim().toUpperCase();
+      const satuanDB = satuanMap.get(`${kode}|${namaSatuan}`);
 
-    if (!satuanDB) {
-      return res.status(400).json({
-        status: "error",
-        message: `Satuan '${namaSatuan}' tidak tersedia untuk barang '${kode}'`
-      });
+      if (!satuanDB) {
+        return res.status(400).json({
+          status: "error",
+          message: `Satuan '${namaSatuan}' tidak tersedia untuk barang '${kode}'`
+        });
+      }
+
+      const hargaDB = Number(satuanDB.harga_jual);
+      const rasioDB = Number(satuanDB.rasio_ke_pcs);
+      const jumlah = Number(item.jumlah) || 0;
+
+      // Harga wajib sama dengan DB (baris bonus murni jumlah = 0 dilewati)
+      if (jumlah > 0 && Number(item.harga_satuan) !== hargaDB) {
+        return res.status(400).json({
+          status: "error",
+          message: `Harga '${kode}' (${namaSatuan}) tidak sesuai harga sistem (Sistem: ${hargaDB}, Dikirim: ${item.harga_satuan})`
+        });
+      }
+
+      // Timpa nilai dari FE dengan nilai DB
+      item.rasio_ke_pcs = rasioDB;
+      item.harga_satuan = hargaDB;
+      item.nama_satuan = satuanDB.nama_satuan;
     }
+    //// END VALIDASI HARGA & RASIO ////
 
-    const hargaDB = Number(satuanDB.harga_jual);
-    const rasioDB = Number(satuanDB.rasio_ke_pcs);
-    const jumlah = Number(item.jumlah) || 0;
 
-    // Harga wajib sama dengan DB (baris bonus murni jumlah = 0 dilewati)
-    if (jumlah > 0 && Number(item.harga_satuan) !== hargaDB) {
-      return res.status(400).json({
-        status: "error",
-        message: `Harga '${kode}' (${namaSatuan}) tidak sesuai harga sistem (Sistem: ${hargaDB}, Dikirim: ${item.harga_satuan})`
-      });
+    //// MERGE BARANG DUPLIKAT ////
+    const mergedStokMap = new Map();
+    for (const item of dataListBarang) {
+      const kode = item?.kode_barang;
+      const rasio = Number(item?.rasio_ke_pcs) || 1;
+      const jumlahBeli = Number(item?.jumlah) || 0;
+      const jumlahBonus = Number(item?.qty_bonus) || 0;
+      const jumlahPcs = (jumlahBeli + jumlahBonus) * rasio;
+
+      if (mergedStokMap.has(kode)) {
+        mergedStokMap.get(kode).jumlah_pembelian += jumlahPcs;
+      } else {
+        mergedStokMap.set(kode, { kode_barang: kode, jumlah_pembelian: jumlahPcs });
+      }
     }
+    const ListStokBarang = Array.from(mergedStokMap.values());
+    //// END MERGE BARANG DUPLIKAT ////
 
-    // Timpa nilai dari FE dengan nilai DB
-    item.rasio_ke_pcs = rasioDB;
-    item.harga_satuan = hargaDB;
-    item.nama_satuan = satuanDB.nama_satuan;
-  }
-  //// END VALIDASI HARGA & RASIO ////
+    //// VALIDASI STOK ////
 
+    // 2. Ambil data stok terkini dari DB
+    const [stokBarang] = await db.query(
+      `SELECT kode_barang, nama_barang, stok_pcs, harga_dasar, ada_fitur_bonus, is_active FROM barang WHERE kode_barang IN (?)`,
+      [ListStokBarang.map(item => item.kode_barang)]
+    );
 
-  //// MERGE BARANG DUPLIKAT ////
-  const mergedStokMap = new Map();
-  for (const item of dataListBarang) {
-    const kode = item?.kode_barang;
-    const rasio = Number(item?.rasio_ke_pcs) || 1;
-    const jumlahBeli = Number(item?.jumlah) || 0;
-    const jumlahBonus = Number(item?.qty_bonus) || 0;
-    const jumlahPcs = (jumlahBeli + jumlahBonus) * rasio;
+    // 3. Looping pengecekan stok (loop dari ListStokBarang yang sudah di-merge)
+    for (let barangDipesan of ListStokBarang) {
+      const item = stokBarang.find(i => i.kode_barang === barangDipesan.kode_barang);
 
-    if (mergedStokMap.has(kode)) {
-      mergedStokMap.get(kode).jumlah_pembelian += jumlahPcs;
-    } else {
-      mergedStokMap.set(kode, { kode_barang: kode, jumlah_pembelian: jumlahPcs });
+      // Barang tidak ditemukan di database (kode salah / sudah dihapus)
+      if (!item) {
+        return res.status(404).json({
+          status: "error",
+          message: `Barang dengan kode '${barangDipesan.kode_barang}' tidak ditemukan`
+        });
+      }
+
+      if (Number(item.is_active) === 0) {
+        return res.status(400).json({
+          status: "error",
+          message: `Barang '${item.nama_barang}' (${item.kode_barang}) sudah NON-AKTIF, tidak bisa diproses!`
+        });
+      }
+
+      const jumlahBeli = Number(barangDipesan.jumlah_pembelian) || 0;
+      const stokTersedia = Number(item.stok_pcs) || 0;
+
+      // Cek apakah stok yang tersedia (total, kalau kode sama dipesan 2x) kurang dari jumlah yang diminta
+      if (stokTersedia < jumlahBeli) {
+        console.log(`Stok untuk ${item.nama_barang} kurang/habis!`);
+
+        return res.status(409).json({
+          status: "error",
+          message: `Stok produk '${item.nama_barang}' tidak mencukupi (Tersedia: ${stokTersedia}, Diminta: ${jumlahBeli})`
+        });
+      }
     }
-  }
-  const ListStokBarang = Array.from(mergedStokMap.values());
-  //// END MERGE BARANG DUPLIKAT ////
-
-  //// VALIDASI STOK ////
-
-  // 2. Ambil data stok terkini dari DB
-  const [stokBarang] = await db.query(
-    `SELECT kode_barang, nama_barang, stok_pcs, harga_dasar, ada_fitur_bonus FROM barang WHERE kode_barang IN (?)`,
-    [ListStokBarang.map(item => item.kode_barang)]
-  );
-
-  // 3. Looping pengecekan stok (loop dari ListStokBarang yang sudah di-merge)
-  for (let barangDipesan of ListStokBarang) {
-    const item = stokBarang.find(i => i.kode_barang === barangDipesan.kode_barang);
-
-    // Barang tidak ditemukan di database (kode salah / sudah dihapus)
-    if (!item) {
-      return res.status(404).json({
-        status: "error",
-        message: `Barang dengan kode '${barangDipesan.kode_barang}' tidak ditemukan`
-      });
-    }
-
-    const jumlahBeli = Number(barangDipesan.jumlah_pembelian) || 0;
-    const stokTersedia = Number(item.stok_pcs) || 0;
-
-    // Cek apakah stok yang tersedia (total, kalau kode sama dipesan 2x) kurang dari jumlah yang diminta
-    if (stokTersedia < jumlahBeli) {
-      console.log(`Stok untuk ${item.nama_barang} kurang/habis!`);
-
-      return res.status(409).json({
-        status: "error",
-        message: `Stok produk '${item.nama_barang}' tidak mencukupi (Tersedia: ${stokTersedia}, Diminta: ${jumlahBeli})`
-      });
-    }
-  }
 
 
     const barangMap = new Map(stokBarang.map(b => [String(b.kode_barang).trim(), b]));
 
-  // (a) Tolak bonus untuk barang yang tidak punya fitur bonus
-  for (const item of dataListBarang) {
-    const kode = String(item.kode_barang).trim();
-    const barang = barangMap.get(kode);
-    if (Number(item.qty_bonus) > 0 && Number(barang?.ada_fitur_bonus) !== 1) {
+    // (a) Tolak bonus untuk barang yang tidak punya fitur bonus
+    for (const item of dataListBarang) {
+      const kode = String(item.kode_barang).trim();
+      const barang = barangMap.get(kode);
+      if (Number(item.qty_bonus) > 0 && Number(barang?.ada_fitur_bonus) !== 1) {
+        return res.status(400).json({
+          status: "error",
+          message: `Barang '${barang?.nama_barang || kode}' tidak memiliki fitur bonus`
+        });
+      }
+    }
+
+    // (b) HPP dari DB, bukan dari FE
+    const rasioAcuanMap = new Map();
+    for (const r of satuanRows) {
+      const k = String(r.kode_barang).trim();
+      const rasio = Number(r.rasio_ke_pcs);
+      if (!rasioAcuanMap.has(k) || rasio > rasioAcuanMap.get(k)) rasioAcuanMap.set(k, rasio);
+    }
+    for (const item of dataListBarang) {
+      const kode = String(item.kode_barang).trim();
+      const hargaDasar = Number(barangMap.get(kode)?.harga_dasar) || 0;
+      const rasioAcuan = rasioAcuanMap.get(kode) || 1;
+      item.hpp_per_unit = (hargaDasar / rasioAcuan) * Number(item.rasio_ke_pcs);
+    }
+
+    //// END VALIDASI STOK ////
+
+    // Generate No Faktur & Tanggal Format YYYY-MM-DD (Waktu Lokal)
+    const now = new Date();
+    const kodeFaktur = kode_faktur();
+
+    const tglFakturFormatted = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(now);
+
+    // ============================================================
+    // LOGIKA TANGGAL PENGIRIMAN & TEMPO NET 12 (OTOMATIS)
+    // ============================================================
+    const tglPengirimanFormatted = input_tgl_kirim || tenggat_hutang || tglFakturFormatted;
+
+    const dateKirim = new Date(tglPengirimanFormatted);
+    dateKirim.setDate(dateKirim.getDate() + 12);
+    const tglJatuhTempo = dateKirim.toISOString().split('T')[0];
+
+
+
+    for (const item of dataListBarang) {
+      const sub = (Number(item.jumlah) || 0) * (Number(item.harga_satuan) || 0);
+      const d = Number(item.diskon) || 0;
+      if (d < 0 || d > sub) {
+        return res.status(400).json({ status: "error", message: `Diskon '${item.kode_barang}' tidak valid` });
+      }
+    }
+
+    // ============================================================
+    // LOGIKA HITUNG DISKON BARANG, PPN & GRAND TOTAL
+    // ============================================================
+    const total_kotor = dataListBarang.reduce((acc, item) => {
+      const jumlah = Number(item.jumlah) || 0;
+      const harga = Number(item.harga_satuan) || 0;
+      const diskonItem = Number(item.diskon) || 0;
+      return acc + ((jumlah * harga) - diskonItem);
+    }, 0);
+
+    const diskonGlobal = Number(input_diskon_global) || 0;
+
+    const dpp_total = Math.max(0, total_kotor - diskonGlobal);
+    const total_harga = dpp_total;
+
+    const ppn_persen = Number(ppn) || 0;
+    const ppn_nominal = Math.round((dpp_total * ppn_persen) / 100);
+
+    const grand_total = dpp_total + ppn_nominal;
+
+    const bayar = Number(total_dibayarkan_pelanggan) || 0;
+
+    if (diskonGlobal < 0 || diskonGlobal > total_kotor) {
+      return res.status(400).json({ message: 'Diskon global tidak valid' });
+    }
+
+    if (bayar < 0) {
+      return res.status(400).json({ message: 'Jumlah pembayaran tidak valid' });
+    }
+
+    if (grand_total < 0) {
+      return res.status(400).json({ message: 'Jumlah grand total tidak valid!' })
+    }
+
+    if (bayar > grand_total) {
       return res.status(400).json({
-        status: "error",
-        message: `Barang '${barang?.nama_barang || kode}' tidak memiliki fitur bonus`
+        message: `Jumlah pembayaran (${bayar}) melebihi total tagihan (${grand_total})`
       });
     }
-  }
 
-  // (b) HPP dari DB, bukan dari FE
-  const rasioAcuanMap = new Map();
-  for (const r of satuanRows) {
-    const k = String(r.kode_barang).trim();
-    const rasio = Number(r.rasio_ke_pcs);
-    if (!rasioAcuanMap.has(k) || rasio > rasioAcuanMap.get(k)) rasioAcuanMap.set(k, rasio);
-  }
-  for (const item of dataListBarang) {
-    const kode = String(item.kode_barang).trim();
-    const hargaDasar = Number(barangMap.get(kode)?.harga_dasar) || 0;
-    const rasioAcuan = rasioAcuanMap.get(kode) || 1;
-    item.hpp_per_unit = (hargaDasar / rasioAcuan) * Number(item.rasio_ke_pcs);
-  }
+    const sisaHutang = Math.max(grand_total - bayar, 0);
 
-  //// END VALIDASI STOK ////
+    const status_lunas = sisaHutang === 0 ? 'Lunas' : 'Belum lunas';
+    const syarat_pembayaran = sisaHutang === 0 ? 'CASH' : 'NET 12'
 
-  // Generate No Faktur & Tanggal Format YYYY-MM-DD (Waktu Lokal)
-  const now = new Date();
-  const kodeFaktur = kode_faktur();
-
-  const tglFakturFormatted = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Jakarta',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).format(now);
-
-  // ============================================================
-  // LOGIKA TANGGAL PENGIRIMAN & TEMPO NET 12 (OTOMATIS)
-  // ============================================================
-  const tglPengirimanFormatted = input_tgl_kirim || tenggat_hutang || tglFakturFormatted;
-
-  const dateKirim = new Date(tglPengirimanFormatted);
-  dateKirim.setDate(dateKirim.getDate() + 12);
-  const tglJatuhTempo = dateKirim.toISOString().split('T')[0];
-
-
-
-  for (const item of dataListBarang) {
-    const sub = (Number(item.jumlah) || 0) * (Number(item.harga_satuan) || 0);
-    const d = Number(item.diskon) || 0;
-    if (d < 0 || d > sub) {
-      return res.status(400).json({ status: "error", message: `Diskon '${item.kode_barang}' tidak valid` });
-    }
-  }
-
-  // ============================================================
-  // LOGIKA HITUNG DISKON BARANG, PPN & GRAND TOTAL
-  // ============================================================
-  const total_kotor = dataListBarang.reduce((acc, item) => {
-    const jumlah = Number(item.jumlah) || 0;
-    const harga = Number(item.harga_satuan) || 0;
-    const diskonItem = Number(item.diskon) || 0;
-    return acc + ((jumlah * harga) - diskonItem);
-  }, 0);
-
-  const diskonGlobal = Number(input_diskon_global) || 0;
-
-  const dpp_total = Math.max(0, total_kotor - diskonGlobal);
-  const total_harga = dpp_total;
-
-  const ppn_persen = Number(ppn) || 0;
-  const ppn_nominal = Math.round((dpp_total * ppn_persen) / 100);
-
-  const grand_total = dpp_total + ppn_nominal;
-
-  const bayar = Number(total_dibayarkan_pelanggan) || 0;
-
-  if (diskonGlobal < 0 || diskonGlobal > total_kotor) {
-    return res.status(400).json({ message: 'Diskon global tidak valid' });
-  }
-
-  if (bayar < 0) {
-    return res.status(400).json({ message: 'Jumlah pembayaran tidak valid' });
-  }
-
-  if(grand_total < 0) {
-    return res.status(400).json({message:'Jumlah grand total tidak valid!'})
-  }
-
-  if (bayar > grand_total) {   
-    return res.status(400).json({
-      message: `Jumlah pembayaran (${bayar}) melebihi total tagihan (${grand_total})`
+    // 3. Prepare Data Detail untuk Bulk Insert
+    const valuesPenjualanDetail = dataListBarang.map(item => {
+      const jumlah = Number(item.jumlah) || 0;
+      const harga = Number(item.harga_satuan) || 0;
+      const diskonItem = Number(item.diskon) || 0;
+      const subtotal = (jumlah * harga) - diskonItem;
+      return [
+        kodeFaktur,
+        item.kode_barang,
+        item.nama_satuan,
+        jumlah,
+        Number(item.qty_bonus || 0),
+        harga,
+        diskonItem,
+        subtotal,
+        // Number(item.hpp_per_unit || item.harga_dasar || 0)
+        Number(item.hpp_per_unit) || 0
+      ];
     });
-  }
-  
-  const sisaHutang = Math.max(grand_total - bayar, 0);
 
-  const status_lunas = sisaHutang === 0 ? 'Lunas' : 'Belum lunas';
-  const syarat_pembayaran = sisaHutang === 0 ? 'CASH' : 'NET 12'
+    // 4. Batch Update Stok — PAKAI ListStokBarang yang sudah di-merge
+    const caseParams = [];
+    const caseStatements = ListStokBarang.map(item => {
+      caseParams.push(item.kode_barang, item.jumlah_pembelian);
+      return `WHEN ? THEN stok_pcs - ?`;
+    }).join(' ');
 
-  // 3. Prepare Data Detail untuk Bulk Insert
-  const valuesPenjualanDetail = dataListBarang.map(item => {
-    const jumlah = Number(item.jumlah) || 0;
-    const harga = Number(item.harga_satuan) || 0;
-    const diskonItem = Number(item.diskon) || 0;
-    const subtotal = (jumlah * harga) - diskonItem;
-    return [
-      kodeFaktur,
-      item.kode_barang,
-      item.nama_satuan,
-      jumlah,
-      Number(item.qty_bonus || 0),
-      harga,
-      diskonItem,
-      subtotal,
-      // Number(item.hpp_per_unit || item.harga_dasar || 0)
-      Number(item.hpp_per_unit) || 0
-    ];
-  });
+    const kodeBarangList = ListStokBarang.map(item => item.kode_barang);
 
-  // 4. Batch Update Stok — PAKAI ListStokBarang yang sudah di-merge
-  const caseParams = [];
-  const caseStatements = ListStokBarang.map(item => {
-    caseParams.push(item.kode_barang, item.jumlah_pembelian);
-    return `WHEN ? THEN stok_pcs - ?`;
-  }).join(' ');
+    const guardParams = [];
+    const guardStatements = ListStokBarang.map(item => {
+      guardParams.push(item.kode_barang, item.jumlah_pembelian);
+      return `WHEN ? THEN stok_pcs >= ?`;
+    }).join(' ');
 
-  const kodeBarangList = ListStokBarang.map(item => item.kode_barang);
-
-  const guardParams = [];
-  const guardStatements = ListStokBarang.map(item => {
-    guardParams.push(item.kode_barang, item.jumlah_pembelian);
-    return `WHEN ? THEN stok_pcs >= ?`;
-  }).join(' ');
-
-  const sqlUpdateStokBatch = `
+    const sqlUpdateStokBatch = `
     UPDATE barang 
     SET stok_pcs = CASE kode_barang 
       ${caseStatements}
@@ -588,136 +597,136 @@ export async function ProsesPesanan(req, res) {
       AND (CASE kode_barang ${guardStatements} ELSE 0 END) = 1
   `;
 
-  const updateQueryParams = [...caseParams, ...kodeBarangList, ...guardParams];
+    const updateQueryParams = [...caseParams, ...kodeBarangList, ...guardParams];
 
-  // DB Transaction
-  let connection;
-  try {
-    connection = await db.getConnection();
-    await connection.beginTransaction();
+    // DB Transaction
+    let connection;
+    try {
+      connection = await db.getConnection();
+      await connection.beginTransaction();
 
-    await connection.query(
-      `INSERT INTO penjualan_header 
+      await connection.query(
+        `INSERT INTO penjualan_header 
        (no_faktur, tgl_faktur, tanggal_pengiriman, jatuhtempo_faktur, id_admin, kode_pelanggan, dpp_total, ppn_persen, ppn_nominal, total_harga, grand_total, diskon_global, pembayaran, sisa_piutang, status, keterangan, sales, syarat_pembayaran) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? , ?)`,
-      [
-        kodeFaktur,
-        tglFakturFormatted,
-        tglPengirimanFormatted,
-        tglJatuhTempo,
-        id_admin,
-        kode_pelanggan,
-        dpp_total,
-        ppn_persen,
-        ppn_nominal,
-        total_harga,
-        grand_total,
-        diskonGlobal,
-        bayar,
-        sisaHutang,
-        status_lunas,
-        'Belum ada keterangan',
-        nama_sales,
-        syarat_pembayaran
-      ]
-    );
+        [
+          kodeFaktur,
+          tglFakturFormatted,
+          tglPengirimanFormatted,
+          tglJatuhTempo,
+          id_admin,
+          kode_pelanggan,
+          dpp_total,
+          ppn_persen,
+          ppn_nominal,
+          total_harga,
+          grand_total,
+          diskonGlobal,
+          bayar,
+          sisaHutang,
+          status_lunas,
+          'Belum ada keterangan',
+          nama_sales,
+          syarat_pembayaran
+        ]
+      );
 
-    await connection.query(
-      `INSERT INTO penjualan_detail 
+      await connection.query(
+        `INSERT INTO penjualan_detail 
        (no_faktur, kode_barang, satuan, jumlah_keluar, qty_bonus, harga_jual, diskon, total_harga, hpp_per_unit) 
       VALUES ?`,
-      [valuesPenjualanDetail]
-    );
+        [valuesPenjualanDetail]
+      );
 
-    const [stokAwalRows] = await connection.query(
-      `SELECT kode_barang, stok_pcs FROM barang WHERE kode_barang IN (?) FOR UPDATE`,
-      [kodeBarangList]
-    );
-    const saldo = new Map(stokAwalRows.map(r => [r.kode_barang, Number(r.stok_pcs) || 0]));
+      const [stokAwalRows] = await connection.query(
+        `SELECT kode_barang, stok_pcs FROM barang WHERE kode_barang IN (?) FOR UPDATE`,
+        [kodeBarangList]
+      );
+      const saldo = new Map(stokAwalRows.map(r => [r.kode_barang, Number(r.stok_pcs) || 0]));
 
-    const [resultUpdateStok] = await connection.query(sqlUpdateStokBatch, updateQueryParams);
+      const [resultUpdateStok] = await connection.query(sqlUpdateStokBatch, updateQueryParams);
 
-    if (resultUpdateStok.affectedRows !== kodeBarangList.length) {
-      throw new Error('Stok berubah saat transaksi diproses (kemungkinan dibeli bersamaan oleh pembeli lain), silakan coba lagi');
-    }
+      if (resultUpdateStok.affectedRows !== kodeBarangList.length) {
+        throw new Error('Stok berubah saat transaksi diproses (kemungkinan dibeli bersamaan oleh pembeli lain), silakan coba lagi');
+      }
 
-    const tglLog = new Intl.DateTimeFormat('sv-SE', {
-      timeZone: 'Asia/Jakarta',
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      hour12: false
-    }).format(now);
+      const tglLog = new Intl.DateTimeFormat('sv-SE', {
+        timeZone: 'Asia/Jakarta',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false
+      }).format(now);
 
-    const valuesStokLog = dataListBarang.map(item => {
-      const kode = item.kode_barang;
-      const rasio = Number(item.rasio_ke_pcs) || 1;
+      const valuesStokLog = dataListBarang.map(item => {
+        const kode = item.kode_barang;
+        const rasio = Number(item.rasio_ke_pcs) || 1;
 
-      const qtyInput = Number(item.jumlah) || 0;
-      const bonusInput = Number(item.qty_bonus) || 0;
-      const qtyPcs = (qtyInput + bonusInput) * rasio;
+        const qtyInput = Number(item.jumlah) || 0;
+        const bonusInput = Number(item.qty_bonus) || 0;
+        const qtyPcs = (qtyInput + bonusInput) * rasio;
 
-      const stokAwalNow = saldo.get(kode) ?? 0;
-      const stokAkhirNow = stokAwalNow - qtyPcs;
-      saldo.set(kode, stokAkhirNow);
+        const stokAwalNow = saldo.get(kode) ?? 0;
+        const stokAkhirNow = stokAwalNow - qtyPcs;
+        saldo.set(kode, stokAkhirNow);
 
-      // const hppPerUnit = Number(item.hpp_per_unit || item.harga_dasar || 0);
-      const hppPerUnit = Number(item.hpp_per_unit) || 0;
-      const hppPerPcs = hppPerUnit / rasio;
+        // const hppPerUnit = Number(item.hpp_per_unit || item.harga_dasar || 0);
+        const hppPerUnit = Number(item.hpp_per_unit) || 0;
+        const hppPerPcs = hppPerUnit / rasio;
 
-      return [
-        tglLog,
-        kode,
-        stokAwalNow,
-        0,
-        qtyPcs,
-        stokAkhirNow,
-        'PENJUALAN',
-        'BAGUS',
-        qtyPcs,
-        -qtyPcs,
-        String(item.nama_satuan || 'PCS').toUpperCase(),
-        qtyInput > 0 ? qtyInput : bonusInput,
-        'PENJUALAN',
-        kodeFaktur,
-        hppPerPcs,
-        `Penjualan Kasir Faktur ${kodeFaktur}`,
-        String(id_admin)
-      ];
-    });
+        return [
+          tglLog,
+          kode,
+          stokAwalNow,
+          0,
+          qtyPcs,
+          stokAkhirNow,
+          'PENJUALAN',
+          'BAGUS',
+          qtyPcs,
+          -qtyPcs,
+          String(item.nama_satuan || 'PCS').toUpperCase(),
+          qtyInput > 0 ? qtyInput : bonusInput,
+          'PENJUALAN',
+          kodeFaktur,
+          hppPerPcs,
+          `Penjualan Kasir Faktur ${kodeFaktur}`,
+          String(id_admin)
+        ];
+      });
 
-    await connection.query(
-  `INSERT INTO stok_log (
+      await connection.query(
+        `INSERT INTO stok_log (
     tanggal, kode_barang, stok_awal, pembelian, penjualan, stok_akhir,
     jenis_transaksi, kondisi, jumlah, qty_perubahan,
     satuan_input, qty_input, referensi_tipe, referensi_no,
     hpp_per_pcs, keterangan, dibuat_oleh
   ) VALUES ?`,
-  [valuesStokLog]
-);
+        [valuesStokLog]
+      );
 
-    await connection.commit();
+      await connection.commit();
 
-    return res.status(200).json({
-      message: 'Transaksi berhasil diproses!',
-      no_faktur: kodeFaktur,
-      status: 200
-    });
+      return res.status(200).json({
+        message: 'Transaksi berhasil diproses!',
+        no_faktur: kodeFaktur,
+        status: 200
+      });
 
-  } catch (err) {
-    if (connection) {
-      await connection.rollback();
+    } catch (err) {
+      if (connection) {
+        await connection.rollback();
+      }
+
+      console.error('Error ProsesPesanan:', err);
+      return res.status(500).json({
+        message: err.message || 'Gagal memproses pesanan',
+        status: 500
+      });
+    } finally {
+      if (connection) {
+        connection.release();
+      }
     }
-
-    console.error('Error ProsesPesanan:', err);
-    return res.status(500).json({
-      message: err.message || 'Gagal memproses pesanan',
-      status: 500
-    });
-  } finally {
-    if (connection) {
-      connection.release();
-    }
-  }
   } catch (err) {
     console.error('Error ProsesPesanan (di luar transaksi):', err);
     if (!res.headersSent) {

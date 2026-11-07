@@ -665,8 +665,14 @@ const SQL_INSERT_STOK_LOG = `INSERT INTO stok_log (
 // Cara selisih menjaga diskon global, cicilan (pembayaran_piutang) & potongan retur.
 function hitungKeuanganBaru(header, delta) {
     const sisaLama = Number(header.sisa_piutang) || 0;
-    let sisaBaru = sisaLama + delta;
+    const grandLama = Number(header.grand_total) || 0;
+    const ppnPersen = Number(header.ppn_persen) || 0;
 
+    const dppBaru = Math.max(0, (Number(header.total_harga) || 0) + delta);
+    const ppnBaru = Math.round((dppBaru * ppnPersen) / 100);
+    const grandBaru = dppBaru + ppnBaru;
+
+    let sisaBaru = sisaLama + (grandBaru - grandLama);
     if (sisaBaru < 0) {
         if (!IZINKAN_KELEBIHAN_BAYAR) {
             throw tolak(409,
@@ -675,16 +681,24 @@ function hitungKeuanganBaru(header, delta) {
         }
         sisaBaru = 0;
     }
-    const totalBaru = Math.max(0, (Number(header.total_harga) || 0) + delta);
-    return { sisaBaru, totalBaru, deltaEfektif: sisaBaru - sisaLama };
+    return {
+        totalBaru: dppBaru, ppnBaru, grandBaru, sisaBaru,
+        deltaEfektif: sisaBaru - sisaLama
+    };
 }
+
+
+
+
 
 async function simpanKeuanganFaktur(conn, noFaktur, keu) {
     await conn.query(
         `UPDATE penjualan_header
-            SET total_harga = ?, sisa_piutang = ?, status = ?
-          WHERE no_faktur = ?`,
-        [keu.totalBaru, keu.sisaBaru, keu.sisaBaru <= 0 ? STATUS_LUNAS : STATUS_PIUTANG, noFaktur]
+    SET total_harga = ?, dpp_total = ?, ppn_nominal = ?, grand_total = ?,
+        sisa_piutang = ?, status = ?
+  WHERE no_faktur = ?`,
+[keu.totalBaru, keu.totalBaru, keu.ppnBaru, keu.grandBaru,
+ keu.sisaBaru, keu.sisaBaru <= 0 ? STATUS_LUNAS : STATUS_PIUTANG, noFaktur]
     );
 
     // Uang yang diterima tidak berubah; hanya potret saldo riwayat yang digeser.
@@ -730,7 +744,7 @@ export async function HAPUSITEMFAKTUR(req, res) {
 
             // 1) Kunci header faktur
             const [headerRows] = await conn.query(
-                `SELECT total_harga, sisa_piutang
+                `SELECT total_harga, sisa_piutang, grand_total, ppn_persen
                    FROM penjualan_header
                   WHERE no_faktur = ?
                   FOR UPDATE`,
@@ -884,7 +898,7 @@ export async function EDITITEMFAKTUR(req, res) {
 
             // 1) Kunci header faktur (serialisasi dengan bayar piutang / retur / edit lain)
             const [headerRows] = await conn.query(
-                `SELECT total_harga, sisa_piutang
+                `SELECT total_harga, sisa_piutang, grand_total, ppn_persen
                    FROM penjualan_header
                   WHERE no_faktur = ?
                   FOR UPDATE`,
@@ -1120,6 +1134,10 @@ export async function EDITITEMFAKTUR(req, res) {
 
 
 
+
+
+
+
 export const ubahKeteranganFaktur = async (req, res) => {
   try {
    
@@ -1159,3 +1177,294 @@ export const ubahKeteranganFaktur = async (req, res) => {
     return res.status(500).json({ message: 'Terjadi kesalahan server' });
   }
 };
+
+
+
+// TAMBAH ITEM FAKTUR //
+// ===========================================================================
+// TAMBAH ITEM KE FAKTUR YANG SUDAH ADA
+// Payload: { no_faktur, items: [{ kode_barang, satuan, jumlah_keluar, diskon }] }
+// Harga SELALU diambil dari DB (sama seperti ProsesPesanan), bukan dari FE.
+// ===========================================================================
+const MAKS_ITEM_TAMBAH = 50;
+
+export async function TAMBAHITEMFAKTUR(req, res) {
+    const idAdmin = req.id_admin ?? null;
+    const body = adalahObjek(req.body) ? req.body : {};
+    const noFaktur = bersih(body.no_faktur, 50);
+    const daftar = Array.isArray(body.items) ? body.items : null;
+
+    if (!noFaktur || !daftar || daftar.length < 1 || daftar.length > MAKS_ITEM_TAMBAH) {
+        return res.status(400).json({ message: `Nomor faktur dan 1-${MAKS_ITEM_TAMBAH} item wajib diisi!` });
+    }
+
+    // ---------- Validasi input ----------
+    const items = [];
+    const sudahAda = new Set();
+    for (const raw of daftar) {
+        if (!adalahObjek(raw)) return res.status(400).json({ message: 'Format item tidak valid!' });
+
+        const kode = bersih(raw.kode_barang, 50);
+        const satuanInput = bersih(raw.satuan, 30);
+        const jumlah = keInt(raw.jumlah_keluar);
+        const diskonKosong = raw.diskon === undefined || raw.diskon === null || raw.diskon === '';
+        const diskon = diskonKosong ? 0 : keInt(raw.diskon);
+
+        if (!kode || !satuanInput) {
+            return res.status(400).json({ message: 'Kode barang dan satuan wajib diisi!' });
+        }
+        if (!jumlah || jumlah < 1 || jumlah > MAKS_JUMLAH) {
+            return res.status(400).json({ message: `Jumlah '${kode}' harus bilangan bulat 1 - ${MAKS_JUMLAH.toLocaleString('id-ID')}!` });
+        }
+        if (diskon === null || diskon > MAKS_RUPIAH) {
+            return res.status(400).json({ message: `Diskon '${kode}' harus bilangan bulat >= 0 (rupiah)!` });
+        }
+        if (sudahAda.has(kode)) {
+            return res.status(400).json({ message: `Barang '${kode}' terkirim dobel, gabungkan jumlahnya.` });
+        }
+        sudahAda.add(kode);
+        items.push({ kode, satuanInput, jumlah, diskon });
+    }
+
+    try {
+        const hasil = await denganTransaksi(async (conn) => {
+            const waktu = waktuSekarang();
+
+            // 1) Kunci header faktur
+            const [headerRows] = await conn.query(
+                `SELECT total_harga, sisa_piutang, grand_total, ppn_persen
+                   FROM penjualan_header
+                  WHERE no_faktur = ?
+                  FOR UPDATE`,
+                [noFaktur]
+            );
+            if (headerRows.length === 0) throw tolak(404, 'Faktur tidak ditemukan!');
+            const header = headerRows[0];
+
+            // 2) Data resmi satuan (harga + rasio) dan barang
+            const kodeList = items.map((i) => i.kode).sort();
+
+            const [satuanRows] = await conn.query(
+                `SELECT kode_barang, nama_satuan, rasio_ke_pcs, harga_jual
+                   FROM barang_satuan WHERE kode_barang IN (?)`,
+                [kodeList]
+            );
+            const satuanMap = new Map(satuanRows.map((r) => [
+                `${String(r.kode_barang).trim()}|${String(r.nama_satuan).trim().toUpperCase()}`, r
+            ]));
+            const rasioAcuan = new Map();
+            for (const r of satuanRows) {
+                const k = String(r.kode_barang).trim();
+                const rs = Number(r.rasio_ke_pcs);
+                if (!rasioAcuan.has(k) || rs > rasioAcuan.get(k)) rasioAcuan.set(k, rs);
+            }
+
+            const [barangRows] = await conn.query(
+                `SELECT kode_barang, nama_barang, stok_pcs, harga_dasar
+                   FROM barang
+                  WHERE kode_barang IN (?)
+                  ORDER BY kode_barang
+                  FOR UPDATE`,
+                [kodeList]
+            );
+            const barangMap = new Map(barangRows.map((b) => [String(b.kode_barang).trim(), b]));
+
+            // 3) Hitung & validasi tiap item
+            const siap = [];
+            let delta = 0;
+            for (const it of items) {
+                const barang = barangMap.get(it.kode);
+                if (!barang) throw tolak(404, `Barang '${it.kode}' tidak ditemukan!`);
+
+                const sat = satuanMap.get(`${it.kode}|${it.satuanInput.toUpperCase()}`);
+                if (!sat) throw tolak(400, `Satuan '${it.satuanInput}' tidak tersedia untuk '${barang.nama_barang}'!`);
+
+                const rasio = Number(sat.rasio_ke_pcs);
+                const harga = Math.round(Number(sat.harga_jual) || 0);
+                if (!Number.isSafeInteger(rasio) || rasio < 1 || harga <= 0) {
+                    throw tolak(409, `Harga/rasio '${barang.nama_barang}' belum diatur dengan benar.`);
+                }
+
+                const subtotal = it.jumlah * harga;
+                if (subtotal > MAKS_RUPIAH) throw tolak(400, `Subtotal '${barang.nama_barang}' terlalu besar!`);
+                if (it.diskon > subtotal) {
+                    throw tolak(400, `Diskon '${barang.nama_barang}' (${rupiah(it.diskon)}) melebihi subtotal (${rupiah(subtotal)})!`);
+                }
+
+                const pcs = it.jumlah * rasio;
+                const stok = Number(barang.stok_pcs) || 0;
+                if (!Number.isSafeInteger(pcs) || stok < pcs) {
+                    throw tolak(409, `Stok '${barang.nama_barang}' tidak mencukupi (Tersedia: ${stok} pcs, Diminta: ${pcs} pcs)`);
+                }
+
+                const hppPerUnit = bulat2(
+                    ((Number(barang.harga_dasar) || 0) / (rasioAcuan.get(it.kode) || 1)) * rasio
+                );
+                const total = subtotal - it.diskon;
+                delta += total;
+
+                siap.push({
+                    kode: it.kode, satuanNama: String(sat.nama_satuan), rasio, harga,
+                    jumlah: it.jumlah, diskon: it.diskon, total, pcs, hppPerUnit, stokAwal: stok
+                });
+            }
+
+            // 4) Keuangan faktur (total, PPN, grand total, piutang, status)
+            const keu = hitungKeuanganBaru(header, delta);
+
+            // 5) Insert detail satu-satu (butuh id_detail untuk stok_log), potong stok
+            const logRows = [];
+            for (const s of siap) {
+                const [ins] = await conn.query(
+                    `INSERT INTO penjualan_detail
+                       (no_faktur, kode_barang, satuan, jumlah_keluar, qty_bonus, harga_jual, diskon, total_harga, hpp_per_unit)
+                     VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+                    [noFaktur, s.kode, s.satuanNama, s.jumlah, s.harga, s.diskon, s.total, s.hppPerUnit]
+                );
+
+                await ubahStok(conn, s.kode, -s.pcs);
+
+                logRows.push(barisStokLog({
+                    waktu, kode: s.kode, stokAwal: s.stokAwal,
+                    perubahanPcs: -s.pcs, satuan: s.satuanNama, qtyInput: s.jumlah,
+                    noFaktur, idDetail: ins.insertId, idAdmin,
+                    keterangan: `Item ditambahkan ke faktur ${noFaktur}`,
+                    hppPerPcs: bulat4(s.hppPerUnit / s.rasio)
+                }));
+            }
+            await conn.query(SQL_INSERT_STOK_LOG, [logRows]);
+
+            await simpanKeuanganFaktur(conn, noFaktur, keu);
+
+            return {
+                jumlah_item_ditambah: siap.length,
+                total_belanja_baru: keu.totalBaru,
+                grand_total_baru: keu.grandBaru,
+                sisa_piutang_baru: keu.sisaBaru
+            };
+        });
+
+        return res.status(200).json({ message: 'Berhasil menambahkan item ke faktur', ...hasil });
+    } catch (err) {
+        return kirimError(res, err, 'TAMBAHITEMFAKTUR');
+    }
+}
+
+
+
+// ===========================================================================
+// HAPUS SELURUH FAKTUR (pesanan dibatalkan)
+// Payload: { no_faktur }
+// ===========================================================================
+export async function HAPUSFAKTUR(req, res) {
+    const idAdmin = req.id_admin ?? null;
+
+    if (!idAdmin) return res.status(403).json({ message: 'id admin tidak ada!' });
+
+    const body = adalahObjek(req.body) ? req.body : {};
+    const noFaktur = bersih(body.no_faktur, 50);
+    if (!noFaktur) return res.status(400).json({ message: 'no_faktur wajib diisi!' });
+
+    try {
+        const hasil = await denganTransaksi(async (conn) => {
+            const waktu = waktuSekarang();
+
+            // 1) Kunci header
+            const [hRows] = await conn.query(
+                `SELECT pembayaran FROM penjualan_header WHERE no_faktur = ? FOR UPDATE`,
+                [noFaktur]
+            );
+            if (hRows.length === 0) throw tolak(404, 'Faktur tidak ditemukan!');
+            if ((Number(hRows[0].pembayaran) || 0) > 0) {
+                throw tolak(409, 'Faktur sudah ada pembayaran, tidak bisa dihapus. Selesaikan lewat retur/refund.');
+            }
+
+            const [bayarRows] = await conn.query(
+                `SELECT 1 FROM pembayaran_piutang_detail WHERE no_faktur = ? LIMIT 1`,
+                [noFaktur]
+            );
+            if (bayarRows.length > 0) {
+                throw tolak(409, 'Faktur punya riwayat pembayaran piutang, tidak bisa dihapus.');
+            }
+
+            // 2) Semua item faktur
+            const [items] = await conn.query(
+                `SELECT id_detail, kode_barang, satuan, jumlah_keluar, qty_bonus, hpp_per_unit
+                   FROM penjualan_detail
+                  WHERE no_faktur = ?
+                  FOR UPDATE`,
+                [noFaktur]
+            );
+
+            // 3) Tidak boleh ada item yang sudah diretur
+            if (items.length > 0) {
+                const [returRows] = await conn.query(
+                    `SELECT 1 FROM retur_detail WHERE id_detail_penjualan IN (?) LIMIT 1`,
+                    [items.map((i) => i.id_detail)]
+                );
+                if (returRows.length > 0) {
+                    throw tolak(409, 'Ada item faktur yang sudah diretur, faktur tidak bisa dihapus.');
+                }
+            }
+
+            // 4) Hitung pcs yang dikembalikan per item (rasio wajib valid)
+            const siap = [];
+            for (const it of items) {
+                const sat = await ambilSatuan(conn, it.kode_barang, it.satuan);
+                if (!sat) {
+                    throw tolak(409,
+                        `Satuan "${it.satuan}" pada barang ${it.kode_barang} tidak lagi terdaftar, stok tidak bisa dikembalikan otomatis. Hubungi admin.`);
+                }
+                const qty = (Number(it.jumlah_keluar) || 0) + (Number(it.qty_bonus) || 0);
+                const pcs = qty * sat.rasio;
+                if (!Number.isSafeInteger(pcs) || pcs < 0) throw tolak(409, 'Data jumlah item tidak valid, hubungi admin.');
+                siap.push({ ...it, sat, qty, pcs });
+            }
+
+            // 5) Kunci barang terurut (anti deadlock), snapshot stok awal
+            const daftarKode = [...new Set(siap.map((s) => s.kode_barang))].sort();
+            const saldo = new Map();
+            if (daftarKode.length > 0) {
+                const [stokRows] = await conn.query(
+                    `SELECT kode_barang, stok_pcs FROM barang
+                      WHERE kode_barang IN (?) ORDER BY kode_barang FOR UPDATE`,
+                    [daftarKode]
+                );
+                for (const r of stokRows) saldo.set(r.kode_barang, Number(r.stok_pcs) || 0);
+            }
+
+            // 6) Kembalikan stok + catat log
+            const logRows = [];
+            for (const s of siap) {
+                if (s.pcs <= 0) continue;
+                if (!saldo.has(s.kode_barang)) {
+                    console.warn(`[HAPUSFAKTUR] barang ${s.kode_barang} tidak ada di master, stok tidak dikembalikan`);
+                    continue;
+                }
+                const stokAwal = saldo.get(s.kode_barang);
+                await ubahStok(conn, s.kode_barang, s.pcs);
+                saldo.set(s.kode_barang, stokAwal + s.pcs);
+
+                const hpp = s.hpp_per_unit == null ? NaN : Number(s.hpp_per_unit);
+                logRows.push(barisStokLog({
+                    waktu, kode: s.kode_barang, stokAwal,
+                    perubahanPcs: s.pcs, satuan: s.sat.nama, qtyInput: s.qty,
+                    noFaktur, idDetail: s.id_detail, idAdmin,
+                    keterangan: `Faktur ${noFaktur} dihapus/dibatalkan, stok dikembalikan`,
+                    hppPerPcs: Number.isFinite(hpp) ? bulat4(hpp / s.sat.rasio) : null
+                }));
+            }
+            if (logRows.length > 0) await conn.query(SQL_INSERT_STOK_LOG, [logRows]);
+
+            // 7) Hapus detail lalu header
+            await conn.query(`DELETE FROM penjualan_detail WHERE no_faktur = ?`, [noFaktur]);
+            await conn.query(`DELETE FROM penjualan_header WHERE no_faktur = ?`, [noFaktur]);
+
+            return { jumlah_item_dikembalikan: logRows.length };
+        });
+
+        return res.status(200).json({ message: 'Faktur berhasil dihapus dan stok dikembalikan', ...hasil });
+    } catch (err) {
+        return kirimError(res, err, 'HAPUSFAKTUR');
+    }
+}
