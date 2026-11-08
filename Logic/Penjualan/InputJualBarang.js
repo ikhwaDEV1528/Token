@@ -719,7 +719,7 @@ export async function ProsesPesanan(req, res) {
 
       console.error('Error ProsesPesanan:', err);
       return res.status(500).json({
-        message: err.message || 'Gagal memproses pesanan',
+        message: 'Gagal memproses pesanan',
         status: 500
       });
     } finally {
