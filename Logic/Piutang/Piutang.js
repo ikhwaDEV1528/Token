@@ -714,6 +714,8 @@ export async function RIWAYAT_PEMBAYARAN(req, res) {
         const kode = String(req.query.kode_pelanggan ?? '').trim().slice(0, MAX_LEN_KODE);
         const noFaktur = String(req.query.no_faktur ?? '').trim().slice(0, MAX_LEN_NO_FAKTUR);
         const { page, limit, offset } = ambilPaging(req.query);
+        // true = hanya riwayat faktur yang masih berhutang (sama dengan daftar faktur di panel detail)
+        const hanyaHutang = Boolean(kode) && String(req.query.hanya_hutang ?? '') === '1';
 
         // --- cabang 1: pembayaran piutang -------------------------------------
         const whereBayar = ['1 = 1'];
@@ -722,16 +724,41 @@ export async function RIWAYAT_PEMBAYARAN(req, res) {
         const whereRetur = ['r.jumlah_potong_piutang > 0'];
         const paramsRetur = [];
 
+        // if (kode) {
+        //     // termasuk setoran DCR (kode_pelanggan = MULTI_TOKO) yang berisi faktur pelanggan ini
+        //     whereBayar.push(`(h.kode_pelanggan = ? OR EXISTS (
+        //         SELECT 1 FROM pembayaran_piutang_detail dk
+        //           JOIN penjualan_header pk ON pk.no_faktur = dk.no_faktur
+        //          WHERE dk.id_pembayaran = h.id AND pk.kode_pelanggan = ?))`);
+        //     paramsBayar.push(kode, kode);
+        //     whereRetur.push('ph.kode_pelanggan = ?');
+        //     paramsRetur.push(kode);
+        // }
+
         if (kode) {
-            // termasuk setoran DCR (kode_pelanggan = MULTI_TOKO) yang berisi faktur pelanggan ini
-            whereBayar.push(`(h.kode_pelanggan = ? OR EXISTS (
-                SELECT 1 FROM pembayaran_piutang_detail dk
-                  JOIN penjualan_header pk ON pk.no_faktur = dk.no_faktur
-                 WHERE dk.id_pembayaran = h.id AND pk.kode_pelanggan = ?))`);
-            paramsBayar.push(kode, kode);
-            whereRetur.push('ph.kode_pelanggan = ?');
-            paramsRetur.push(kode);
+            if (hanyaHutang) {
+                // pembayaran (termasuk DCR) yang menyentuh faktur pelanggan ini yang MASIH berhutang
+                whereBayar.push(`EXISTS (
+            SELECT 1 FROM pembayaran_piutang_detail dk
+              JOIN penjualan_header pk ON pk.no_faktur = dk.no_faktur
+             WHERE dk.id_pembayaran = h.id
+               AND pk.kode_pelanggan = ? AND pk.sisa_piutang > 0)`);
+                paramsBayar.push(kode);
+                // retur yang memotong piutang faktur yang masih berhutang
+                whereRetur.push('ph.kode_pelanggan = ? AND ph.sisa_piutang > 0');
+                paramsRetur.push(kode);
+            } else {
+                // termasuk setoran DCR (kode_pelanggan = MULTI_TOKO) yang berisi faktur pelanggan ini
+                whereBayar.push(`(h.kode_pelanggan = ? OR EXISTS (
+            SELECT 1 FROM pembayaran_piutang_detail dk
+              JOIN penjualan_header pk ON pk.no_faktur = dk.no_faktur
+             WHERE dk.id_pembayaran = h.id AND pk.kode_pelanggan = ?))`);
+                paramsBayar.push(kode, kode);
+                whereRetur.push('ph.kode_pelanggan = ?');
+                paramsRetur.push(kode);
+            }
         }
+
         if (noFaktur) {
             whereBayar.push(`EXISTS (SELECT 1 FROM pembayaran_piutang_detail dx
                                      WHERE dx.id_pembayaran = h.id AND dx.no_faktur = ?)`);
@@ -791,11 +818,12 @@ export async function RIWAYAT_PEMBAYARAN(req, res) {
         if (idBayar.length > 0) {
             const [details] = await db.query(
                 `SELECT d.id_pembayaran, d.no_faktur, d.jumlah, d.sisa_sebelum, d.sisa_sesudah
-                   FROM pembayaran_piutang_detail d
-                   ${kode ? 'JOIN penjualan_header pk ON pk.no_faktur = d.no_faktur AND pk.kode_pelanggan = ?' : ''}
-                  WHERE d.id_pembayaran IN (?)
-                  ORDER BY d.id`,
-                kode ? [kode, idBayar] : [idBayar]
+       FROM pembayaran_piutang_detail d
+       ${kode ? `JOIN penjualan_header pk ON pk.no_faktur = d.no_faktur AND pk.kode_pelanggan = ?${hanyaHutang ? ' AND pk.sisa_piutang > 0' : ''}` : ''}
+      WHERE d.id_pembayaran IN (?)
+      ${noFaktur ? 'AND d.no_faktur = ?' : ''}
+      ORDER BY d.id`,
+                [...(kode ? [kode] : []), idBayar, ...(noFaktur ? [noFaktur] : [])]
             );
             for (const d of details) {
                 if (!detailMap.has(d.id_pembayaran)) detailMap.set(d.id_pembayaran, []);
@@ -835,7 +863,7 @@ export async function RIWAYAT_PEMBAYARAN(req, res) {
                         nama_pelanggan: isDcr ? 'Setoran DCR (Multi Toko)' : h.nama_pelanggan,
                         tanggal_bayar: h.tanggal,
                         // DCR + filter pelanggan: tampilkan hanya porsi pelanggan ini
-                        total_bayar: isDcr && kode
+                        total_bayar: !retur && kode && (isDcr || hanyaHutang || noFaktur)
                             ? rincianFinal.reduce((a, x) => a + x.jumlah, 0)
                             : num(h.total),
                         metode: h.metode,

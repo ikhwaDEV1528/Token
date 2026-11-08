@@ -348,11 +348,11 @@ export async function DETAIL_HUTANG_SUPPLIER(req, res) {
                 jatuh_tempo: f.jatuh_tempo,
                 hari_ke_jatuh_tempo: hariKeJatuhTempo(f.jatuh_tempo, hariIni),
                 subtotal: num(f.subtotal),
-diskon: num(f.diskon),
-ppn_persen: num(f.ppn_persen),
-ppn_nominal: num(f.ppn_nominal),
-grand_total: num(f.grand_total),
-total_harga: num(f.total_harga),
+                diskon: num(f.diskon),
+                ppn_persen: num(f.ppn_persen),
+                ppn_nominal: num(f.ppn_nominal),
+                grand_total: num(f.grand_total),
+                total_harga: num(f.total_harga),
                 dibayar_di_awal: Math.max(0, dibayarTotal - cicilan), // murni dibayar tunai saat nota dibuat
                 cicilan,
                 dipotong_retur, // 👈 Properti Baru
@@ -543,7 +543,7 @@ export async function BAYAR_HUTANG(req, res) {
                             sisa_sebelum: num(d.sisa_sebelum),
                             sisa_sesudah: num(d.sisa_sesudah),
                             lunas: num(d.sisa_sesudah) === 0
-                        })) 
+                        }))
                     }
                 });
             }
@@ -668,6 +668,9 @@ export async function RIWAYAT_PEMBAYARAN_HUTANG(req, res) {
             filterPembelianId = idp;
         }
 
+        // true = hanya riwayat faktur yang masih berhutang (sama dengan daftar faktur di panel detail)
+        const hanyaHutang = filterSupplierId !== null && str(req.query.hanya_hutang) === '1';
+
         // ----------------------------------------------------------------------
         // SUBQUERY 1: PEMBAYARAN HUTANG REGULER (TUNAI / TRANSFER)
         // ----------------------------------------------------------------------
@@ -680,6 +683,13 @@ export async function RIWAYAT_PEMBAYARAN_HUTANG(req, res) {
         if (filterPembelianId) {
             whereBayar.push(`EXISTS (SELECT 1 FROM pembayaran_hutang_detail dx WHERE dx.id_pembayaran = h.id AND dx.id_pembelian = ?)`);
             paramsBayar.push(filterPembelianId);
+        }
+        if (hanyaHutang) {
+            // hanya pembayaran yang menyentuh minimal 1 faktur yang masih berhutang
+            whereBayar.push(`EXISTS (
+        SELECT 1 FROM pembayaran_hutang_detail dk
+          JOIN pembelian_header pk ON pk.id = dk.id_pembelian
+         WHERE dk.id_pembayaran = h.id AND pk.sisa_hutang > 0)`);
         }
         const whereBayarSql = whereBayar.join(' AND ');
 
@@ -695,6 +705,9 @@ export async function RIWAYAT_PEMBAYARAN_HUTANG(req, res) {
         if (filterPembelianId) {
             whereRetur.push('p.id = ?');
             paramsRetur.push(filterPembelianId);
+        }
+        if (hanyaHutang) {
+            whereRetur.push('p.sisa_hutang > 0');
         }
         const whereReturSql = whereRetur.join(' AND ');
 
@@ -766,13 +779,17 @@ export async function RIWAYAT_PEMBAYARAN_HUTANG(req, res) {
 
         // Fetch Detail Pembayaran Reguler
         if (bayarHeaderIds.length > 0) {
+
             const [detailsBayar] = await db.query(
-                `SELECT id_pembayaran, id_pembelian, no_faktur, jumlah, sisa_sebelum, sisa_sesudah
-                 FROM pembayaran_hutang_detail
-                 WHERE id_pembayaran IN (?)
-                 ORDER BY id`,
-                [bayarHeaderIds]
+                `SELECT d.id_pembayaran, d.id_pembelian, d.no_faktur, d.jumlah, d.sisa_sebelum, d.sisa_sesudah
+             FROM pembayaran_hutang_detail d
+             ${hanyaHutang ? 'JOIN pembelian_header pk ON pk.id = d.id_pembelian AND pk.sisa_hutang > 0' : ''}
+             WHERE d.id_pembayaran IN (?)
+             ${filterPembelianId ? 'AND d.id_pembelian = ?' : ''}
+             ORDER BY d.id`,
+                [bayarHeaderIds, ...(filterPembelianId ? [filterPembelianId] : [])]
             );
+
             for (const d of detailsBayar) {
                 const key = `BAYAR_${d.id_pembayaran}`;
                 if (!detailMap.has(key)) detailMap.set(key, []);
@@ -794,6 +811,7 @@ export async function RIWAYAT_PEMBAYARAN_HUTANG(req, res) {
                  JOIN retur_pembelian_header rph ON rpd.retur_id = rph.id
                  JOIN pembelian_header p ON LOWER(TRIM(rph.no_faktur)) = LOWER(TRIM(p.no_faktur))
                  WHERE rpd.retur_id IN (?)
+                 ${hanyaHutang ? 'AND p.sisa_hutang > 0' : ''}
                  ORDER BY rpd.id`,
                 [returHeaderIds]
             );
@@ -818,17 +836,22 @@ export async function RIWAYAT_PEMBAYARAN_HUTANG(req, res) {
             data: {
                 riwayat: headers.map((h) => {
                     const mapKey = `${h.tipe_transaksi}_${h.source_id}`;
+                    const rincian = detailMap.get(mapKey) || [];
+                    // pembayaran multi-faktur: total kartu = jumlah rincian yang tampil
+                    const hitungUlang = h.tipe_transaksi === 'BAYAR' && (hanyaHutang || filterPembelianId);
                     return {
-                        tipe_transaksi: h.tipe_transaksi, // 'BAYAR' atau 'RETUR'
+                        tipe_transaksi: h.tipe_transaksi,
                         no_bayar: h.no_transaksi,
                         supplier_id: h.supplier_id,
                         nama_supplier: h.nama_supplier,
                         tanggal_bayar: h.tanggal_transaksi,
-                        total_bayar: num(h.nominal),
-                        metode: h.metode, // 'TUNAI', 'TRANSFER', atau 'POTONG_HUTANG'
+                        total_bayar: hitungUlang
+                            ? rincian.reduce((a, x) => a + x.jumlah, 0)
+                            : num(h.nominal),
+                        metode: h.metode,
                         catatan: h.catatan,
                         dibuat_oleh: h.dibuat_oleh,
-                        rincian: detailMap.get(mapKey) || []
+                        rincian
                     };
                 }),
                 paging: { page, limit, total, total_page: Math.max(1, Math.ceil(total / limit)) }
