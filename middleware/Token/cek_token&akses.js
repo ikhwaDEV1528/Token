@@ -141,7 +141,7 @@ export async function Cheking_token_role(req, res) {
         return res.status(500).json({ message: 'Konfigurasi CSRF di server bermasalah!' });
       }
       const csrfToken = generateToken(req, res);
-      return res.status(200).json({ message: 'Hak akses dan Sesi terpenuhi!', csrfToken: csrfToken });
+      return res.status(200).json({ message: 'Hak akses dan Sesi terpenuhi!', csrfToken: csrfToken, username: decode_refresh_token.username});
     }
 
     console.log('Tidak memiliki hak akses!');
