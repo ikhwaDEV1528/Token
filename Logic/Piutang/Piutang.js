@@ -244,7 +244,10 @@ export async function DETAIL_PIUTANG_PELANGGAN(req, res) {
                     DATE_FORMAT(ph.tgl_faktur, '%Y-%m-%d')        AS tgl_faktur,
                     DATE_FORMAT(ph.jatuhtempo_faktur, '%Y-%m-%d') AS jatuh_tempo,
                     ph.sales,
-IFNULL(ph.grand_total, IFNULL(ph.total_harga, 0)) AS total_harga,
+                    IFNULL(ph.grand_total, IFNULL(ph.total_harga, 0)) AS total_harga,
+                    IFNULL(ph.dpp_total, IFNULL(ph.total_harga, 0)) AS dpp_total,
+                    IFNULL(ph.ppn_persen, 0)                      AS ppn_persen,
+                    IFNULL(ph.ppn_nominal, 0)                     AS ppn_nominal,
                     IFNULL(ph.pembayaran, 0)                      AS pembayaran_awal,
                     ph.sisa_piutang,
                     COALESCE(pl.nama_pelanggan, ph.kode_pelanggan) AS nama_pelanggan
@@ -300,7 +303,7 @@ IFNULL(ph.grand_total, IFNULL(ph.total_harga, 0)) AS total_harga,
             const potonganRetur = returMap.get(f.no_faktur) || 0;
             const pembayaran = bayarMap.get(f.no_faktur) || 0;
             const dibayarDiAwal = num(f.pembayaran_awal);
-            const totalTagihan = num(f.total_harga);;
+            const totalTagihan = num(f.total_harga);
             return {
                 no_faktur: f.no_faktur,
                 tgl_faktur: f.tgl_faktur,
@@ -309,6 +312,9 @@ IFNULL(ph.grand_total, IFNULL(ph.total_harga, 0)) AS total_harga,
                 sales: f.sales,
                 umur_hari: umurHari(f.tgl_faktur, hariIni),
                 total_tagihan: totalTagihan,
+                dpp_total: num(f.dpp_total),
+                ppn_persen: num(f.ppn_persen),
+                ppn_nominal: num(f.ppn_nominal),
                 dibayar_di_awal: dibayarDiAwal,
                 potongan_retur: potonganRetur,
                 pembayaran_piutang: pembayaran,
