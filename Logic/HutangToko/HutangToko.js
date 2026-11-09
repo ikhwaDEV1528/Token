@@ -747,6 +747,7 @@ export async function RIWAYAT_PEMBAYARAN_HUTANG(req, res) {
                 WHERE ${whereBayarSql}
 
                 UNION ALL
+                
 
                 /* TRANSAKSI RETUR POTONG HUTANG */
                 SELECT 
@@ -773,6 +774,7 @@ export async function RIWAYAT_PEMBAYARAN_HUTANG(req, res) {
         // 3. AMBIL RINCIAN DETAIL (DIPISAH BERDASARKAN TIPE TRANSAKSI)
         // ----------------------------------------------------------------------
         const detailMap = new Map();
+        
 
         const bayarHeaderIds = headers.filter(h => h.tipe_transaksi === 'BAYAR').map(h => h.source_id);
         const returHeaderIds = headers.filter(h => h.tipe_transaksi === 'RETUR').map(h => h.source_id);

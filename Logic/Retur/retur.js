@@ -186,6 +186,69 @@ export async function CariNoFaktur(req, res) {
 }
 
 
+// ===== ENDPOINT 1B: CARI DAFTAR FAKTUR (no faktur / nama pelanggan / kode pelanggan / sales) =====
+// HANYA pencarian daftar. Tidak menghitung apa pun, tidak mengubah data.
+// Setelah user pilih, FE tetap memanggil CARI_FAKTUR seperti biasa.
+export async function CariDaftarFaktur(req, res) {
+    const keyword = String(req.query.input ?? '').trim().slice(0, MAX_KEYWORD_LEN);
+    if (!keyword) return res.status(200).json({ status: true, list: [] });
+
+    try {
+        const terms = keyword.split(/\s+/).filter(Boolean).slice(0, 5);
+
+        const where = terms.map(
+            () => `(ph.no_faktur LIKE ? OR pl.nama_pelanggan LIKE ? OR ph.kode_pelanggan LIKE ? OR ph.sales LIKE ?)`
+        );
+        const params = terms.flatMap(t => {
+            const like = `%${escapeLike(t)}%`;
+            return [like, like, like, like];
+        });
+
+        const [rows] = await db.query(
+            `SELECT ph.no_faktur,
+                    ph.tgl_faktur,
+                    ph.sales AS nama_sales,
+                    COALESCE(pl.nama_pelanggan, ph.kode_pelanggan) AS nama_pelanggan,
+                    IFNULL(ph.sisa_piutang, 0) AS sisa_piutang,
+                    (
+                        SELECT COUNT(*)
+                          FROM penjualan_detail pd
+                          LEFT JOIN barang_satuan bs
+                                 ON bs.kode_barang = pd.kode_barang
+                                AND bs.nama_satuan = pd.satuan
+                         WHERE pd.no_faktur = ph.no_faktur
+                           AND pd.harga_jual > 0
+                           AND IFNULL(pd.qty_bonus, 0) = 0
+                           AND pd.jumlah_keluar * IFNULL(bs.rasio_ke_pcs, 1) >
+                               IFNULL((SELECT SUM(rd.qty_total_pcs)
+                                         FROM retur_detail rd
+                                        WHERE rd.id_detail_penjualan = pd.id_detail), 0)
+                    ) AS jumlah_item_bisa_retur
+               FROM penjualan_header ph
+               LEFT JOIN pelanggan pl ON ph.kode_pelanggan = pl.kode_pelanggan
+              WHERE ${where.join(' AND ')}
+              ORDER BY ph.tgl_faktur DESC, ph.no_faktur DESC
+              LIMIT ${MAX_RESULT}`,
+            params
+        );
+
+        return res.status(200).json({
+            status: true,
+            list: rows.map(r => ({
+                no_faktur: r.no_faktur,
+                tgl_faktur: r.tgl_faktur,
+                nama_pelanggan: r.nama_pelanggan || '-',
+                nama_sales: r.nama_sales || '-',
+                sisa_piutang: Number(r.sisa_piutang) || 0,
+                bisa_diretur: Number(r.jumlah_item_bisa_retur) > 0
+            }))
+        });
+    } catch (err) {
+        console.error('[CariDaftarFaktur] Error:', err);
+        return res.status(500).json({ status: false, message: 'Gagal mencari faktur. Silakan coba lagi.' });
+    }
+}
+
 
 
 
