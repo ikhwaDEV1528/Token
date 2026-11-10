@@ -634,25 +634,25 @@ const barisStokLog = ({
     waktu, kode, stokAwal, perubahanPcs, satuan, qtyInput,
     noFaktur, idDetail, keterangan, idAdmin, hppPerPcs = null
 }) => [
-    waktu,                                   // tanggal
-    kode,                                    // kode_barang
-    stokAwal,                                // stok_awal
-    0,                                       // pembelian
-    0,                                       // penjualan
-    stokAwal + perubahanPcs,                 // stok_akhir
-    'PENYESUAIAN',                           // jenis_transaksi
-    'BAGUS',                                 // kondisi
-    Math.abs(perubahanPcs),                  // jumlah (PCS, selalu positif)
-    perubahanPcs,                            // qty_perubahan (+ masuk, - keluar)
-    String(satuan || 'PCS').toUpperCase().slice(0, 30), // satuan_input
-    qtyInput,                                // qty_input
-    'PENJUALAN',                             // referensi_tipe
-    noFaktur,                                // referensi_no
-    idDetail,                                // referensi_id
-    hppPerPcs,                               // hpp_per_pcs
-    String(keterangan).slice(0, 255),        // keterangan
-    idAdmin ? String(idAdmin).slice(0, 50) : null // dibuat_oleh
-];
+        waktu,                                   // tanggal
+        kode,                                    // kode_barang
+        stokAwal,                                // stok_awal
+        0,                                       // pembelian
+        0,                                       // penjualan
+        stokAwal + perubahanPcs,                 // stok_akhir
+        'PENYESUAIAN',                           // jenis_transaksi
+        'BAGUS',                                 // kondisi
+        Math.abs(perubahanPcs),                  // jumlah (PCS, selalu positif)
+        perubahanPcs,                            // qty_perubahan (+ masuk, - keluar)
+        String(satuan || 'PCS').toUpperCase().slice(0, 30), // satuan_input
+        qtyInput,                                // qty_input
+        'PENJUALAN',                             // referensi_tipe
+        noFaktur,                                // referensi_no
+        idDetail,                                // referensi_id
+        hppPerPcs,                               // hpp_per_pcs
+        String(keterangan).slice(0, 255),        // keterangan
+        idAdmin ? String(idAdmin).slice(0, 50) : null // dibuat_oleh
+    ];
 
 const SQL_INSERT_STOK_LOG = `INSERT INTO stok_log (
     tanggal, kode_barang, stok_awal, pembelian, penjualan, stok_akhir,
@@ -703,8 +703,8 @@ async function simpanKeuanganFaktur(conn, noFaktur, keu) {
     SET total_harga = ?, dpp_total = ?, ppn_nominal = ?, grand_total = ?,
         sisa_piutang = ?, status = ?
   WHERE no_faktur = ?`,
-[keu.totalBaru, keu.totalBaru, keu.ppnBaru, keu.grandBaru,
- keu.sisaBaru, keu.sisaBaru <= 0 ? STATUS_LUNAS : STATUS_PIUTANG, noFaktur]
+        [keu.totalBaru, keu.totalBaru, keu.ppnBaru, keu.grandBaru,
+        keu.sisaBaru, keu.sisaBaru <= 0 ? STATUS_LUNAS : STATUS_PIUTANG, noFaktur]
     );
 
     // Uang yang diterima tidak berubah; hanya potret saldo riwayat yang digeser.
@@ -921,8 +921,14 @@ export async function EDITITEMFAKTUR(req, res) {
                   FOR UPDATE`,
                 [idDetail, noFaktur]
             );
+            
             if (oldRows.length === 0) throw tolak(404, 'Item detail faktur tidak ditemukan!');
             const oldItem = oldRows[0];
+
+            // GUARD: baris bonus murni (jumlah_keluar = 0) tidak boleh diedit
+            if (Number(oldItem.jumlah_keluar) <= 0) {
+                throw tolak(409, 'Barang bonus tidak bisa diedit. Hapus item bonus ini lalu tambah ulang.');
+            }
 
             // 3) Item yang sudah pernah diretur tidak boleh diubah
             if (await itemSudahDiretur(conn, idDetail)) {
@@ -1145,43 +1151,43 @@ export async function EDITITEMFAKTUR(req, res) {
 
 
 export const ubahKeteranganFaktur = async (req, res) => {
-  try {
-   
-    if (!req.id_admin) {
-      return res.status(403).json({ message: 'id admin tidak ada!' });
+    try {
+
+        if (!req.id_admin) {
+            return res.status(403).json({ message: 'id admin tidak ada!' });
+        }
+
+        // 2. Validasi input
+        const { no_faktur, keterangan } = req.body;
+
+        if (!no_faktur || typeof no_faktur !== 'string') {
+            return res.status(400).json({ message: 'no_faktur wajib diisi' });
+        }
+        if (keterangan !== undefined && typeof keterangan !== 'string') {
+            return res.status(400).json({ message: 'keterangan harus berupa teks' });
+        }
+
+        const keteranganBersih = (keterangan || '').trim();
+
+        if (keteranganBersih.length > 100) { // sesuaikan dengan panjang kolom di DB
+            return res.status(400).json({ message: 'Keterangan maksimal 255 karakter' });
+        }
+
+        // 3. Update (query berparameter, aman dari SQL injection)
+        const [result] = await db.query(
+            'UPDATE penjualan_header SET keterangan = ? WHERE no_faktur = ?',
+            [keteranganBersih, no_faktur]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Faktur tidak ditemukan' });
+        }
+
+        return res.json({ message: 'Keterangan berhasil diubah', keterangan: keteranganBersih });
+    } catch (error) {
+        console.error('ubahKeteranganFaktur error:', error);
+        return res.status(500).json({ message: 'Terjadi kesalahan server' });
     }
-
-    // 2. Validasi input
-    const { no_faktur, keterangan } = req.body;
-
-    if (!no_faktur || typeof no_faktur !== 'string') {
-      return res.status(400).json({ message: 'no_faktur wajib diisi' });
-    }
-    if (keterangan !== undefined && typeof keterangan !== 'string') {
-      return res.status(400).json({ message: 'keterangan harus berupa teks' });
-    }
-
-    const keteranganBersih = (keterangan || '').trim();
-
-    if (keteranganBersih.length > 100) { // sesuaikan dengan panjang kolom di DB
-      return res.status(400).json({ message: 'Keterangan maksimal 255 karakter' });
-    }
-
-    // 3. Update (query berparameter, aman dari SQL injection)
-    const [result] = await db.query(
-      'UPDATE penjualan_header SET keterangan = ? WHERE no_faktur = ?',
-      [keteranganBersih, no_faktur]
-    );
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Faktur tidak ditemukan' });
-    }
-
-    return res.json({ message: 'Keterangan berhasil diubah', keterangan: keteranganBersih });
-  } catch (error) {
-    console.error('ubahKeteranganFaktur error:', error);
-    return res.status(500).json({ message: 'Terjadi kesalahan server' });
-  }
 };
 
 
