@@ -846,6 +846,11 @@ export async function ProsesRetur(req, res) {
                 kodeBarang = d.kode_barang;
                 noFakturAsal = d.no_faktur;
 
+                // GUARD: baris bonus murni (jumlah_keluar = 0) tidak boleh diretur
+                if (Number(d.qty_beli) <= 0) {
+                    throw new ValidationError(`Barang [${kodeBarang}] adalah barang bonus, tidak dapat diretur!`);
+                }
+
                 const beli = satuanMap.get(`${kodeBarang}|${d.satuan_beli}`);
                 if (!beli) {
                     throw new ValidationError(
@@ -992,7 +997,7 @@ export async function ProsesRetur(req, res) {
             : (dppRetur > 0 ? Math.round((ppnNominalRetur / dppRetur) * 10000) / 100 : 0);
         const grandTotalReturPlusPPN = dppRetur + ppnNominalRetur;
 
-        
+
 
         // 5. INSERT DETAIL (bulk) --------------------------------------------
         const [hasilDetail] = await conn.query(
