@@ -183,7 +183,7 @@ export async function InputJualBarang(req, res) {
     console.error('InputJualBarang Error:', err);
 
     return res.status(500).json({
-      message: err.message
+      message: 'Kesalahan server, Silahkan coba lagi!'
     });
   }
 }
