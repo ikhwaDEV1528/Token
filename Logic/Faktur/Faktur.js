@@ -668,7 +668,13 @@ function hitungKeuanganBaru(header, delta) {
     const grandLama = Number(header.grand_total) || 0;
     const ppnPersen = Number(header.ppn_persen) || 0;
 
-    const dppBaru = Math.max(0, (Number(header.total_harga) || 0) + delta);
+    const dppBaru = (Number(header.total_harga) || 0) + delta;
+    if (dppBaru < 0) {
+        throw tolak(409,
+            `Perubahan ditolak: total item akan lebih kecil dari diskon faktur ` +
+            `(total jadi ${rupiah(dppBaru)}). Kurangi diskon faktur atau ubah item lain terlebih dahulu.`);
+    }
+
     const ppnBaru = Math.round((dppBaru * ppnPersen) / 100);
     const grandBaru = dppBaru + ppnBaru;
 
