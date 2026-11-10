@@ -2,10 +2,10 @@ import rateLimit from "express-rate-limit"
 
 export const limit = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 50,
+    max: 5,
     // Tambahkan 'req' di depan 'res' agar urutannya benar
     handler: (req, res) => {
-        res.status(429).json({ message: 'Terlalu banyak aksi!' }); 
+        res.status(429).json({ message: 'Terlalu banyak aksi login, coba lagi nanti!' }); 
         // Note: 429 adalah status code standar untuk Too Many Requests
     },
     standardHeaders: true,

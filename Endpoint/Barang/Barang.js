@@ -15,7 +15,7 @@ Barang.put('/OPEN_BONUS' , CekRequestAkses, doubleCsrfProtection, OpenBonus)
 Barang.put('/CLOSE_BONUS' , CekRequestAkses, doubleCsrfProtection , CloseBonus)
 Barang.put('/NONAKTIF_BARANG' , CekRequestAkses , doubleCsrfProtection, nonAktifBarang)
 Barang.put('/AKTIF_BARANG' , CekRequestAkses , doubleCsrfProtection, activeBarang)
-Barang.put('/DISABLE_SATUAN' , disableSatuan)
-Barang.put('/ACTIVE_SATUAN', activeSatuan)
+Barang.put('/DISABLE_SATUAN' ,CekRequestAkses, doubleCsrfProtection, disableSatuan)
+Barang.put('/ACTIVE_SATUAN', CekRequestAkses, doubleCsrfProtection, activeSatuan)
 
 export default Barang; 
