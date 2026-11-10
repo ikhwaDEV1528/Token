@@ -390,8 +390,13 @@ export async function ProsesPesanan(req, res) {
       }
 
       // Timpa nilai dari FE dengan nilai DB
+      // item.rasio_ke_pcs = rasioDB;
+      // item.harga_satuan = hargaDB;
+      // item.nama_satuan = satuanDB.nama_satuan;
+
+      // Timpa nilai dari FE dengan nilai DB
       item.rasio_ke_pcs = rasioDB;
-      item.harga_satuan = hargaDB;
+      item.harga_satuan = jumlah > 0 ? hargaDB : 0;   // baris bonus murni tetap harga 0
       item.nama_satuan = satuanDB.nama_satuan;
     }
     //// END VALIDASI HARGA & RASIO ////
