@@ -7,9 +7,15 @@
 // Query string:
 //   ?periode=hari_ini | 7_hari | 30_hari   (default: hari_ini)
 //
+// Aturan angka (disamakan dengan laporan & omzet sales):
+//   - Penjualan = DPP faktur (tanpa PPN) dikurangi DPP retur penjualan.
+//   - Faktur dihitung di tgl_faktur, retur dihitung di tanggal_retur.
+//   - Pembelian = DPP pembelian (tanpa PPN).
+//
 // Index yang disarankan supaya query tetap cepat saat data membesar:
 //   ALTER TABLE penjualan_header ADD INDEX idx_penjualan_tgl_faktur (tgl_faktur);
 //   ALTER TABLE pembelian_header ADD INDEX idx_pembelian_tanggal_belanja (tanggal_belanja);
+//   ALTER TABLE retur_header     ADD INDEX idx_retur_tanggal_retur (tanggal_retur);
 
 import { db } from "../../db.js"; // <- sesuaikan: harus mysql2/promise pool
 
@@ -21,9 +27,9 @@ const PERIODE = {
   "30_hari": { hari: 30, label: "30 Hari Terakhir", pembanding: "30 hari sebelumnya" },
 };
 
-// Nominal transaksi = grand_total (DPP + PPN). Jika grand_total kosong/0
+// Nominal murni = dpp_total (di luar PPN). Jika dpp_total kosong/0
 // (data lama sebelum kolom PPN ada), fallback ke total_harga.
-const NOMINAL = "IF(COALESCE(grand_total, 0) > 0, grand_total, COALESCE(total_harga, 0))";
+const NOMINAL = "IF(COALESCE(dpp_total, 0) > 0, dpp_total, COALESCE(total_harga, 0))";
 
 // Konfigurasi statis (BUKAN input user) sehingga aman dipakai di template SQL.
 const SUMBER = {
@@ -47,6 +53,14 @@ const SUMBER = {
     status: "status_bayar",
     urut: "tanggal_belanja DESC, id DESC",
   },
+  // Retur penjualan: DPP retur murni (tanpa PPN). Fallback ke total_nominal_retur untuk data lama.
+  retur: {
+    tabel: "retur_header",
+    tanggal: "tanggal_retur",
+    nominal: "IF(COALESCE(dpp_total, 0) > 0, dpp_total, COALESCE(total_nominal_retur, 0))",
+    dibayar: "0",
+    sisa: "0",
+  },
 };
 
 /* ----------------------------- Helper tanggal ----------------------------- */
@@ -66,9 +80,11 @@ const angka = (v) => {
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
 };
 
+// Penyebut pakai nilai mutlak supaya arah persen tetap benar walau periode
+// pembanding bernilai negatif (hari yang isinya hanya retur).
 const hitungPerubahan = (sekarang, sebelumnya) => {
   if (sebelumnya === 0) return sekarang === 0 ? 0 : null; // null = tidak ada pembanding
-  return Math.round(((sekarang - sebelumnya) / sebelumnya) * 1000) / 10;
+  return Math.round(((sekarang - sebelumnya) / Math.abs(sebelumnya)) * 1000) / 10;
 };
 
 /* -------------------------------- Query ----------------------------------- */
@@ -133,7 +149,27 @@ const ambilTerbaru = async (cfg, dari, sampai, limit = 5) => {
 
 /* ------------------------------ Transformasi ------------------------------ */
 
-const bentukRingkasan = (sekarang, sebelumnya) => ({
+// Penjualan bersih = penjualan murni - retur penjualan.
+const bentukRingkasanPenjualan = (kotorNow, kotorPrev, returNow, returPrev) => {
+  const bersih = angka(kotorNow.total - returNow.total);
+  const bersihPrev = angka(kotorPrev.total - returPrev.total);
+  return {
+    jumlah: kotorNow.jumlah,
+    total: bersih,
+    kotor: kotorNow.total,
+    retur: returNow.total,
+    jumlah_retur: returNow.jumlah,
+    dibayar: kotorNow.dibayar,
+    sisa: kotorNow.sisa,
+    rata_rata: kotorNow.jumlah > 0 ? angka(kotorNow.total / kotorNow.jumlah) : 0,
+    perubahan: {
+      jumlah_pct: hitungPerubahan(kotorNow.jumlah, kotorPrev.jumlah),
+      total_pct: hitungPerubahan(bersih, bersihPrev),
+    },
+  };
+};
+
+const bentukRingkasanPembelian = (sekarang, sebelumnya) => ({
   jumlah: sekarang.jumlah,
   total: sekarang.total,
   dibayar: sekarang.dibayar,
@@ -146,18 +182,22 @@ const bentukRingkasan = (sekarang, sebelumnya) => ({
 });
 
 // Isi hari yang tidak ada transaksi dengan 0 supaya grafik tidak bolong.
-const bentukTren = (mulai, hari, barisJual, barisBeli) => {
+// Penjualan per hari sudah dikurangi retur pada tanggal retur tersebut.
+const bentukTren = (mulai, hari, barisJual, barisBeli, barisRetur) => {
   const mapJual = new Map(barisJual.map((r) => [r.hari, r]));
   const mapBeli = new Map(barisBeli.map((r) => [r.hari, r]));
+  const mapRetur = new Map(barisRetur.map((r) => [r.hari, r]));
 
   return Array.from({ length: hari }, (_, i) => {
     const tanggal = tambahHari(mulai, i);
     const j = mapJual.get(tanggal);
     const b = mapBeli.get(tanggal);
+    const r = mapRetur.get(tanggal);
     return {
       tanggal,
-      penjualan: angka(j?.total),
+      penjualan: angka(angka(j?.total) - angka(r?.total)),
       jumlah_penjualan: angka(j?.jumlah),
+      retur: angka(r?.total),
       pembelian: angka(b?.total),
       jumlah_pembelian: angka(b?.jumlah),
     };
@@ -185,15 +225,18 @@ export const GET_DASHBOARD_MONITORING = async (req, res) => {
     const dariSebelum = tambahHari(dari, -hari); // periode pembanding
     const sampaiSebelum = dari;
 
-    const { penjualan: jual, pembelian: beli } = SUMBER;
+    const { penjualan: jual, pembelian: beli, retur } = SUMBER;
 
     const [
       jualNow,
       jualPrev,
       beliNow,
       beliPrev,
+      returNow,
+      returPrev,
       jualHarian,
       beliHarian,
+      returHarian,
       jualTerbaru,
       beliTerbaru,
     ] = await Promise.all([
@@ -201,11 +244,17 @@ export const GET_DASHBOARD_MONITORING = async (req, res) => {
       ambilRingkasan(jual, dariSebelum, sampaiSebelum),
       ambilRingkasan(beli, dari, sampai),
       ambilRingkasan(beli, dariSebelum, sampaiSebelum),
+      ambilRingkasan(retur, dari, sampai),
+      ambilRingkasan(retur, dariSebelum, sampaiSebelum),
       ambilHarian(jual, dari, sampai),
       ambilHarian(beli, dari, sampai),
+      ambilHarian(retur, dari, sampai),
       ambilTerbaru(jual, dari, sampai),
       ambilTerbaru(beli, dari, sampai),
     ]);
+
+    const penjualan = bentukRingkasanPenjualan(jualNow, jualPrev, returNow, returPrev);
+    const pembelian = bentukRingkasanPembelian(beliNow, beliPrev);
 
     res.set("Cache-Control", "no-store");
     return res.status(200).json({
@@ -219,10 +268,10 @@ export const GET_DASHBOARD_MONITORING = async (req, res) => {
           dari,
           sampai: hariIni,
         },
-        penjualan: bentukRingkasan(jualNow, jualPrev),
-        pembelian: bentukRingkasan(beliNow, beliPrev),
-        selisih: angka(jualNow.total - beliNow.total),
-        tren: bentukTren(dari, hari, jualHarian, beliHarian),
+        penjualan,
+        pembelian,
+        selisih: angka(penjualan.total - pembelian.total),
+        tren: bentukTren(dari, hari, jualHarian, beliHarian, returHarian),
         terbaru: {
           penjualan: jualTerbaru,
           pembelian: beliTerbaru,

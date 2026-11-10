@@ -303,9 +303,9 @@ export async function CARI_BARANG_FAKTUR_LAIN(req, res) {
     if (!keyword) return res.status(200).json({ Search: [] });
 
     try {
-       // Tiap kata boleh cocok ke: nama barang / kode barang / no faktur / nama sales /
-// nama pelanggan / kode pelanggan.
-// Contoh: "ale-ale budi" atau "ale PLG001".
+        // Tiap kata boleh cocok ke: nama barang / kode barang / no faktur / nama sales /
+        // nama pelanggan / kode pelanggan.
+        // Contoh: "ale-ale budi" atau "ale PLG001".
         const terms = keyword.split(/\s+/).filter(Boolean).slice(0, 5);
 
         const where = terms.map(
@@ -545,7 +545,7 @@ const toInt = (v) => {
 // VALIDASI & NORMALISASI PAYLOAD (murni, tanpa DB)
 // ----------------------------------------------------------------------------
 function parsePayload(body) {
-    const { no_faktur, items, catatan, metode_penyelesaian } = body || {};
+    const { no_faktur, no_faktur_lain, items, catatan, metode_penyelesaian } = body || {};
 
     if (typeof no_faktur !== 'string' || no_faktur.trim() === '') {
         throw new ValidationError('Nomor faktur tidak valid!');
@@ -621,6 +621,7 @@ function parsePayload(body) {
 
     return {
         noFaktur,
+        no_faktur_lain: typeof no_faktur_lain === 'string' ? no_faktur_lain.trim().slice(0, MAX_LEN_NO_FAKTUR) : null,
         metode,
         catatan: catatan ? String(catatan).trim() : null,
         items: normalized
@@ -691,12 +692,13 @@ export async function ProsesRetur(req, res) {
 
         // 1. LOCK FAKTUR TUJUAN — gerbang serialisasi semua retur ke faktur ini
         const [fakturRows] = await conn.query(
-            `SELECT no_faktur, sisa_piutang FROM penjualan_header WHERE no_faktur = ? FOR UPDATE`,
+            `SELECT no_faktur, sisa_piutang, IFNULL(ppn_persen, 0) AS ppn_persen FROM penjualan_header WHERE no_faktur = ? FOR UPDATE`,
             [fakturAsli]
         );
 
         if (fakturRows.length === 0) throw new ValidationError('Faktur tidak ditemukan!', 404);
         const sisaPiutangSebelum = Number(fakturRows[0].sisa_piutang) || 0;
+        const ppnPersenFakturTujuan = Number(fakturRows[0].ppn_persen) || 0; // dipakai untuk barang manual
 
         if (metode === 'POTONG_PIUTANG' && sisaPiutangSebelum <= 0) {
             throw new ValidationError(
@@ -754,6 +756,7 @@ export async function ProsesRetur(req, res) {
             const [rows] = await conn.query(
                 `SELECT h.no_faktur,
                         IFNULL(h.diskon_global, 0) AS diskon_faktur,
+                        IFNULL(h.ppn_persen, 0) AS ppn_persen,
                         IFNULL((SELECT SUM(GREATEST(d2.harga_jual * d2.jumlah_keluar - IFNULL(d2.diskon, 0), 0))
                                   FROM penjualan_detail d2
                                  WHERE d2.no_faktur = h.no_faktur), 0) AS total_setelah_diskon_item
@@ -764,6 +767,7 @@ export async function ProsesRetur(req, res) {
             for (const r of rows) {
                 fakturCtxMap.set(r.no_faktur, {
                     diskon_faktur: Number(r.diskon_faktur) || 0,
+                    ppn_persen: Number(r.ppn_persen) || 0,
                     total_setelah_diskon_item: Number(r.total_setelah_diskon_item) || 0
                 });
             }
@@ -793,6 +797,7 @@ export async function ProsesRetur(req, res) {
 
         // 4. HITUNG SEMUA ITEM (server-side) ---------------------------------
         let grandTotal = 0;
+        const dppPerTarif = new Map(); // persen PPN -> total DPP (PPN mengikuti faktur asal barang)
         const detailRowsToInsert = [];
         const stokDelta = new Map();  // kode -> perubahan stok (pcs)
         const tukarButuh = new Map(); // kode -> total pcs yang harus tersedia (TUKAR_BARANG)
@@ -897,12 +902,18 @@ export async function ProsesRetur(req, res) {
                 d.sudah_nominal += subtotal;
             }
 
+            const ppnPersenItem = it.isManual
+                ? ppnPersenFakturTujuan
+                : ((fakturCtxMap.get(noFakturAsal) || {}).ppn_persen || 0);
+            dppPerTarif.set(ppnPersenItem, (dppPerTarif.get(ppnPersenItem) || 0) + subtotal);
+
             grandTotal += subtotal;
 
             detailRowsToInsert.push([
                 idReturHeader, idDetailTarget, kodeBarang, it.satuan, rasioRetur, it.qty,
                 qtyPcs, hargaSatuan, hargaPerPcs, subtotal, it.kondisi, it.alasan, waktu.sql
             ]);
+
             const idxDetailRetur = detailRowsToInsert.length - 1;
 
             // Perubahan stok (diakumulasi, dieksekusi sekali per barang)
@@ -947,22 +958,41 @@ export async function ProsesRetur(req, res) {
         }
 
 
-        // 4.1 KALKULASI PPN DINAMIS DARI FAKTUR ASLI
-        const [fakturPpnRow] = await conn.query(
-            `SELECT IFNULL(ppn_persen, 0) AS ppn_persen FROM penjualan_header WHERE no_faktur = ?`,
-            [fakturAsli]
-        );
-        const ppnPersenRetur = Number(fakturPpnRow[0]?.ppn_persen) || 0;
+        // // 4.1 KALKULASI PPN DINAMIS DARI FAKTUR ASLI
+        // const [fakturPpnRow] = await conn.query(
+        //     `SELECT IFNULL(ppn_persen, 0) AS ppn_persen FROM penjualan_header WHERE no_faktur = ?`,
+        //     [fakturAsli]
+        // );
+        // const ppnPersenRetur = Number(fakturPpnRow[0]?.ppn_persen) || 0;
 
-        let dppRetur = grandTotal;
+        // let dppRetur = grandTotal;
+        // let ppnNominalRetur = 0;
+
+        // if (ppnPersenRetur > 0) {
+        //     // dppRetur = Math.round(grandTotal / (1 + (ppnPersenRetur / 100))); // ini gw non aktifkan dlu kayak nya bug 
+        //     dppRetur = grandTotal // ini gw yang perbaiki, harusnya dpp itu sama dengan total harga / kolom total_nominal_retur. kalo total nominal retur 1700 maka dpp juga harus 1700, jadi itu udah bersih sama diskon dll
+        //     // ppnNominalRetur = grandTotal - dppRetur; // dan ini juga kayak nya bug, harusnya kan nominal ppn itu dari dppretur x persentase ppn kan = nominal ppn nya. tapi disini malah di kurang anjay
+        //     ppnNominalRetur = Math.round((dppRetur * ppnPersenRetur) / 100) // dan ini yang gw ubah. jadi dppretur x persentase ppn nya, dan nanti gw minta saran apakah perubahan gw di baris ini benar?
+
+        // }
+
+        // // const grandTotalReturPlusPPN = grandTotal; // ini juga bug , harusnya dpp retur + ppnnominal
+        // const grandTotalReturPlusPPN = dppRetur + ppnNominalRetur; // ini udah gw benerin, tapi kira2 bener kan langkah yang gw ambil? kalo tadi gw udah uji coba (testing) hasil nya sesuai harapan banget!
+
+
+        // 4.1 PPN mengikuti faktur ASAL barang (barang manual: faktur tujuan)
+        const dppRetur = grandTotal;
         let ppnNominalRetur = 0;
-
-        if (ppnPersenRetur > 0) {
-            dppRetur = Math.round(grandTotal / (1 + (ppnPersenRetur / 100)));
-            ppnNominalRetur = grandTotal - dppRetur;
+        for (const [persen, dpp] of dppPerTarif) {
+            if (persen > 0) ppnNominalRetur += Math.round((dpp * persen) / 100);
         }
+        // kolom header cuma 1: kalau tarif campur, simpan tarif efektif
+        const ppnPersenRetur = dppPerTarif.size === 1
+            ? [...dppPerTarif.keys()][0]
+            : (dppRetur > 0 ? Math.round((ppnNominalRetur / dppRetur) * 10000) / 100 : 0);
+        const grandTotalReturPlusPPN = dppRetur + ppnNominalRetur;
 
-        const grandTotalReturPlusPPN = grandTotal;
+        
 
         // 5. INSERT DETAIL (bulk) --------------------------------------------
         const [hasilDetail] = await conn.query(
@@ -1126,7 +1156,8 @@ export async function ProsesRetur(req, res) {
                     updated_at = ?
               WHERE id = ?`,
             [
-                grandTotalReturPlusPPN, // 2.058
+                // grandTotalReturPlusPPN, // 2.058 //tapi ini gw gatau ini bug atau bukan ? harusnya kolom total_nominal retur di isi dengan grandtotal jadi nanti kolom total_nominal_retur = 1700 dan di kolom dpp juga 1700. atau kolom totalnomial retur isi total + ppn aja?
+                grandTotal,
                 dppRetur,               // 1.854 (DPP Murni untuk omzet sales)
                 ppnPersenRetur,         // 11.00
                 ppnNominalRetur,        // 204
@@ -1145,7 +1176,7 @@ export async function ProsesRetur(req, res) {
             message: 'Retur berhasil diproses!',
             data: {
                 no_retur: noRetur,
-                total_refund: grandTotal,
+                total_refund: grandTotalReturPlusPPN,
                 jumlah_potong_piutang: jumlahPotongPiutang,
                 jumlah_refund_kas: jumlahRefundKas
             }

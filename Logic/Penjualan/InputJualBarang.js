@@ -78,7 +78,8 @@ export async function InputJualBarang(req, res) {
               'nama_satuan', bs.nama_satuan,
               'harga_jual', bs.harga_jual,
               'rasio_ke_pcs', bs.rasio_ke_pcs,
-              'level', bs.level
+              'level', bs.level,
+              'is_active_satuan', bs.is_active_satuan
             )
           )
         ) AS list_satuan
@@ -343,7 +344,7 @@ export async function ProsesPesanan(req, res) {
     const kodeListPesanan = [...new Set(dataListBarang.map(i => String(i.kode_barang).trim()))];
 
     const [satuanRows] = await db.query(
-      `SELECT kode_barang, nama_satuan, rasio_ke_pcs, harga_jual
+      `SELECT kode_barang, nama_satuan, rasio_ke_pcs, harga_jual, is_active_satuan
      FROM barang_satuan
      WHERE kode_barang IN (?)`,
       [kodeListPesanan]
@@ -365,6 +366,14 @@ export async function ProsesPesanan(req, res) {
         return res.status(400).json({
           status: "error",
           message: `Satuan '${namaSatuan}' tidak tersedia untuk barang '${kode}'`
+        });
+      }
+
+      // Tolak jika satuan sudah dinonaktifkan
+      if (Number(satuanDB.is_active_satuan) === 0) {
+        return res.status(400).json({
+          status: "error",
+          message: `Satuan '${namaSatuan}' untuk barang '${kode}' sudah NON-AKTIF, tidak bisa diproses!`
         });
       }
 

@@ -37,7 +37,8 @@ export async function GET_BARANG(req, res) {
                             'nama_satuan', bs.nama_satuan,
                             'rasio_ke_pcs', bs.rasio_ke_pcs,
                             'harga_jual', bs.harga_jual,
-                            'level', bs.level
+                            'level', bs.level,
+                            'is_active_satuan', bs.is_active_satuan 
                         )
                     )
                 END AS list_satuan
@@ -53,7 +54,7 @@ export async function GET_BARANG(req, res) {
                 LIMIT ? OFFSET ?
             ) b
             LEFT JOIN (
-                SELECT id, kode_barang, nama_satuan, rasio_ke_pcs, harga_jual, level 
+                SELECT id, kode_barang, nama_satuan, rasio_ke_pcs, harga_jual, level , is_active_satuan
                 FROM barang_satuan 
                 ORDER BY level ASC
             ) bs ON b.kode_barang = bs.kode_barang
@@ -381,6 +382,54 @@ export async function activeBarang(req , res) {
       status:500
     })
   }
+}
+
+
+export async function disableSatuan(req ,res) {
+   const {kode_barang,nama_satuan,level} = req.body;
+
+   if(!kode_barang || !nama_satuan || !level || nama_satuan == ""){
+    return res.status(400).json({
+      message:'Server say: Sepertinya ada kesalahan!'
+    })
+  }
+
+  try {
+    const [rows] = await db.query(`UPDATE barang_satuan SET is_active_satuan = ? WHERE kode_barang = ? AND nama_satuan = ? AND level = ?`, [0, kode_barang , nama_satuan , level])
+    return res.status(200).json({
+      message:'Berhasil disbale satuan barang!'
+    })
+  } catch (err) {
+    console.log(err)
+    return res.status(500).json({
+      message:'Server say: Gagal disable satuan barang!'
+    })
+  }
+
+}
+
+
+export async function activeSatuan(req ,res) {
+   const {kode_barang,nama_satuan,level} = req.body;
+
+   if(!kode_barang || !nama_satuan || !level || nama_satuan == ""){
+    return res.status(400).json({
+      message:'Server say: Sepertinya ada kesalahan!'
+    })
+  }
+
+  try {
+    const [rows] = await db.query(`UPDATE barang_satuan SET is_active_satuan = ? WHERE kode_barang = ? AND nama_satuan = ? AND level = ?`, [1, kode_barang , nama_satuan , level])
+    return res.status(200).json({
+      message:'Berhasil aktifkan satuan barang!'
+    })
+  } catch (err) {
+    console.log(err)
+    return res.status(500).json({
+      message:'Server say: Gagal disable satuan barang!'
+    })
+  }
+
 }
 
 // // EDIT BARANG //
