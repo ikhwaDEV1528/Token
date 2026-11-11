@@ -1,5 +1,9 @@
 import express from 'express';
 import { getSalesList, getUnpaidInvoices , submitDCR } from '../../Logic/LaporanSales/LaporanSales.js';
+import { CekRequestAkses } from '../../middleware/Token/cek_request_akses.js';
+import { doubleCsrfProtection } from '../../configurasiCrsf.js';
+
+
 
 const LaporanSales = express.Router();
 
@@ -10,6 +14,6 @@ LaporanSales.get('/sales', getSalesList);
 LaporanSales.get('/invoices', getUnpaidInvoices);
 
 // 3. Simpan transaksi setoran penagihan DCR
-LaporanSales.post('/submit', submitDCR);
+LaporanSales.post('/submit', CekRequestAkses, doubleCsrfProtection, submitDCR);
 
 export default LaporanSales;

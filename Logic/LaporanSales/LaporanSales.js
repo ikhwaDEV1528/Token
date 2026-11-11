@@ -398,7 +398,10 @@ export async function getUnpaidInvoices(req, res) {
 // }
 
 
+
+
 import { BuatNoBayar } from "../Piutang/noBayar.js";
+
 
 export async function submitDCR(req, res) {
   let connection = null;
@@ -453,6 +456,7 @@ export async function submitDCR(req, res) {
 
     // Uang disetorkan (opsional) tidak boleh melebihi total ditagih
     let disetor = null;
+
     if (uang_disetorkan !== undefined && uang_disetorkan !== null && uang_disetorkan !== "") {
       disetor = Math.round(Number(uang_disetorkan));
       if (!Number.isFinite(disetor) || disetor < 0) {
@@ -464,6 +468,14 @@ export async function submitDCR(req, res) {
         );
       }
     }
+
+    // GUARD: uang disetorkan wajib diisi dan harus sama dengan total uang ditagih
+    if (disetor === null || disetor !== totalSetoranKeseluruhan) {
+      throw new ValidationError(
+        `Uang disetorkan (${rp(disetor || 0)}) harus sama dengan total uang ditagih (${rp(totalSetoranKeseluruhan)})!`
+      );
+    }
+
 
     /* ---------- B. Mulai transaksi ---------- */
     connection = await db.getConnection();
