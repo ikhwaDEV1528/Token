@@ -121,7 +121,23 @@ export async function CariNoFaktur(req, res) {
             } catch (e) {
                 listSatuans = [];
             }
+
+            // listSatuans = listSatuans.filter(s => s && s.nama_satuan); // KOMENT SEMENTARA
+
+            // TESTING //
+
             listSatuans = listSatuans.filter(s => s && s.nama_satuan);
+
+            // Barang tanpa satuan PCS: tampilkan PCS virtual
+            if (listSatuans.length > 0 && !listSatuans.some(s => Number(s.rasio_ke_pcs) === 1)) {
+                const besar = listSatuans.reduce((a, b) => Number(b.rasio_ke_pcs) > Number(a.rasio_ke_pcs) ? b : a);
+                if (Number(besar.rasio_ke_pcs) > 0) {
+                    listSatuans.push({
+                        nama_satuan: 'PCS', rasio_ke_pcs: 1, level: 1,
+                        harga_jual: Number(besar.harga_jual) / Number(besar.rasio_ke_pcs)
+                    });
+                }
+            }
 
             const rasioBeliPcs = Number(row.rasio_beli_pcs) || 1;
             const qtyBeli = Number(row.qty_beli) || 0;
@@ -414,7 +430,21 @@ export async function CARI_BARANG_FAKTUR_LAIN(req, res) {
                 totalSetelahDiskonItem: totalMap.get(r.no_faktur_asal) || 0
             });
 
+            // const listSatuan = (satuanMap.get(r.kode_barang) || []).sort((a, b) => b.level - a.level);
+
             const listSatuan = (satuanMap.get(r.kode_barang) || []).sort((a, b) => b.level - a.level);
+
+            // Barang tanpa satuan PCS: tampilkan PCS virtual
+            if (listSatuan.length > 0 && !listSatuan.some(s => s.rasio_ke_pcs === 1)) {
+                const besar = listSatuan.reduce((a, b) => b.rasio_ke_pcs > a.rasio_ke_pcs ? b : a);
+                if (besar.rasio_ke_pcs > 0) {
+                    listSatuan.push({
+                        id_satuan: null, nama_satuan: 'PCS', rasio_ke_pcs: 1, level: 1,
+                        harga_jual: besar.harga_jual / besar.rasio_ke_pcs
+                    });
+                }
+            }
+
             const satuanBeli = listSatuan.find(s => s.nama_satuan === r.satuan_beli);
             const rasioBeli = satuanBeli ? satuanBeli.rasio_ke_pcs : null;
             const totalBeliPcs = rasioBeli ? qty * rasioBeli : 0;
@@ -780,7 +810,28 @@ export async function ProsesRetur(req, res) {
                 `SELECT * FROM barang_satuan WHERE kode_barang IN (?)`,
                 [[...kodeSet]]
             );
+            // for (const r of rows) satuanMap.set(`${r.kode_barang}|${r.nama_satuan}`, r); // KOMENT UNTUK UJI COBA DULU
+
+            // TESTING  ////////
+
             for (const r of rows) satuanMap.set(`${r.kode_barang}|${r.nama_satuan}`, r);
+
+            // Barang tanpa baris PCS: sediakan PCS virtual dari rasio satuan terbesarnya
+            const perBarang = new Map();
+            for (const r of rows) {
+                if (!perBarang.has(r.kode_barang)) perBarang.set(r.kode_barang, []);
+                perBarang.get(r.kode_barang).push(r);
+            }
+            for (const [kode, list] of perBarang) {
+                if (list.some(r => Number(r.rasio_ke_pcs) === 1)) continue; // sudah punya PCS asli
+                const besar = list.reduce((a, b) => Number(b.rasio_ke_pcs) > Number(a.rasio_ke_pcs) ? b : a);
+                const rasio = Number(besar.rasio_ke_pcs);
+                if (!(rasio > 0)) continue;
+                satuanMap.set(`${kode}|PCS`, {
+                    kode_barang: kode, nama_satuan: 'PCS', rasio_ke_pcs: 1, level: 1,
+                    harga_jual: Number(besar.harga_jual) / rasio // hanya dipakai retur manual
+                });
+            }
         }
 
         // 3. HEADER RETUR ----------------------------------------------------

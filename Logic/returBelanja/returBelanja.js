@@ -121,6 +121,11 @@ export async function CariNoFakturPembelian(req, res) {
                 });
             }
 
+            // Barang tanpa satuan rasio 1 (PCS): tambahkan PCS virtual
+            if (listSatuans.length > 0 && !listSatuans.some(s => Number(s.rasio_ke_pcs) === 1)) {
+                listSatuans.push({ nama_satuan: 'PCS', rasio_ke_pcs: 1, level: 1 });
+            }
+
             // if (!listSatuans.some(s => s.nama_satuan.toUpperCase() === 'PCS')) {
             //     listSatuans.push({
             //         nama_satuan: 'PCS',
@@ -446,6 +451,17 @@ async function rbProses(conn, { noFaktur, catatan, items }, idAdmin) {
         [kodeList]
     );
     const satuanMap = new Map(satuanRows.map((r) => [`${r.kode_barang}|${String(r.nama_satuan).toUpperCase()}`, r]));
+
+    // Barang tanpa satuan rasio 1 (PCS): sediakan PCS virtual (hanya di memori)
+    const perBarangSatuan = new Map();
+    for (const r of satuanRows) {
+        if (!perBarangSatuan.has(r.kode_barang)) perBarangSatuan.set(r.kode_barang, []);
+        perBarangSatuan.get(r.kode_barang).push(r);
+    }
+    for (const [kode, list] of perBarangSatuan) {
+        if (list.some((r) => Number(r.rasio_ke_pcs) === 1)) continue; // sudah punya PCS asli
+        satuanMap.set(`${kode}|PCS`, { kode_barang: kode, nama_satuan: 'PCS', rasio_ke_pcs: 1, level: 1 });
+    }
 
     // 🔴 KODE PERBAIKAN AKURAT (DPP Murni):
     const subtotalHeader = Number(faktur.subtotal) || 0;

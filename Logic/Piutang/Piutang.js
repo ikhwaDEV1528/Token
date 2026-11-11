@@ -250,6 +250,7 @@ export async function DETAIL_PIUTANG_PELANGGAN(req, res) {
                     IFNULL(ph.ppn_nominal, 0)                     AS ppn_nominal,
                     IFNULL(ph.pembayaran, 0)                      AS pembayaran_awal,
                     ph.sisa_piutang,
+                    IFNULL(ph.diskon_global, 0)                   AS diskon_global,
                     COALESCE(pl.nama_pelanggan, ph.kode_pelanggan) AS nama_pelanggan
                FROM penjualan_header ph
                LEFT JOIN pelanggan pl ON pl.kode_pelanggan = ph.kode_pelanggan
@@ -282,7 +283,7 @@ export async function DETAIL_PIUTANG_PELANGGAN(req, res) {
         }
 
         const listFaktur = fakturRows.map((f) => f.no_faktur);
-        const [[returRows], [bayarRows]] = await Promise.all([
+        const [[returRows], [bayarRows], [subtotalRows]] = await Promise.all([
             db.query(
                 `SELECT no_faktur, SUM(jumlah_potong_piutang) AS total
                    FROM retur_header WHERE no_faktur IN (?) GROUP BY no_faktur`,
@@ -292,10 +293,17 @@ export async function DETAIL_PIUTANG_PELANGGAN(req, res) {
                 `SELECT d.no_faktur, SUM(d.jumlah) AS total
                    FROM pembayaran_piutang_detail d WHERE d.no_faktur IN (?) GROUP BY d.no_faktur`,
                 [listFaktur]
+            ),
+            db.query(
+                `SELECT no_faktur, SUM(total_harga) AS total
+                   FROM penjualan_detail WHERE no_faktur IN (?) GROUP BY no_faktur`,
+                [listFaktur]
             )
         ]);
+
         const returMap = new Map(returRows.map((r) => [r.no_faktur, num(r.total)]));
         const bayarMap = new Map(bayarRows.map((r) => [r.no_faktur, num(r.total)]));
+        const subtotalMap = new Map(subtotalRows.map((r) => [r.no_faktur, num(r.total)]));
 
         const hariIni = wibSekarang().tanggal;
         const faktur = fakturRows.map((f) => {
@@ -304,6 +312,7 @@ export async function DETAIL_PIUTANG_PELANGGAN(req, res) {
             const pembayaran = bayarMap.get(f.no_faktur) || 0;
             const dibayarDiAwal = num(f.pembayaran_awal);
             const totalTagihan = num(f.total_harga);
+            const subtotal = subtotalMap.get(f.no_faktur) || 0;
             return {
                 no_faktur: f.no_faktur,
                 tgl_faktur: f.tgl_faktur,
@@ -312,6 +321,8 @@ export async function DETAIL_PIUTANG_PELANGGAN(req, res) {
                 sales: f.sales,
                 umur_hari: umurHari(f.tgl_faktur, hariIni),
                 total_tagihan: totalTagihan,
+                subtotal: subtotal,
+                diskon_global: num(f.diskon_global),
                 dpp_total: num(f.dpp_total),
                 ppn_persen: num(f.ppn_persen),
                 ppn_nominal: num(f.ppn_nominal),

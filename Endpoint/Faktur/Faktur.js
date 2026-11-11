@@ -1,5 +1,5 @@
 import express from "express";
-import { EDITITEMFAKTUR, HAPUSITEMFAKTUR } from "../../Logic/Faktur/Faktur.js";
+import { EDITITEMFAKTUR, HAPUSITEMFAKTUR, ubahTglPengiriman } from "../../Logic/Faktur/Faktur.js";
 import { getKewajibanRefund, selesaikanRefund } from "../../Logic/Refund/Refund.js";
 import { CekRequestAkses } from "../../middleware/Token/cek_request_akses.js";
 import { ubahKeteranganFaktur } from "../../Logic/Faktur/Faktur.js";
@@ -16,5 +16,6 @@ Faktur.post('/selesaikan-refund' ,CekRequestAkses , doubleCsrfProtection, selesa
 Faktur.post('/UBAH_KETERANGAN_FAKTUR', CekRequestAkses, doubleCsrfProtection, ubahKeteranganFaktur);
 Faktur.post('/TAMBAH_ITEM_FAKTUR', CekRequestAkses, doubleCsrfProtection, TAMBAHITEMFAKTUR);
 Faktur.post('/HAPUS_SEMUA_FAKTUR',CekRequestAkses, doubleCsrfProtection, HAPUSFAKTUR);
+Faktur.post('/UBAH_TGL_PENGIRIMAN', CekRequestAkses, ubahTglPengiriman);
 
 export default Faktur
