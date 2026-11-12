@@ -239,6 +239,7 @@ export async function DETAIL_RIWAYAT_RETUR(req, res) {
                         rh.metode_penyelesaian, rh.catatan,
                         rh.dpp_total, rh.ppn_persen, rh.ppn_nominal, rh.grand_total,
                         rh.jumlah_potong_piutang, rh.jumlah_refund_kas,
+                        IFNULL(ph.ppn_persen, 0) AS ppn_persen_tujuan,
                         COALESCE(p.nama_pelanggan, ph.kode_pelanggan) AS nama_pelanggan
                  ${FROM_JOINS}
                  WHERE rh.id = ? LIMIT 1`,
@@ -246,12 +247,16 @@ export async function DETAIL_RIWAYAT_RETUR(req, res) {
             ),
             db.query(
                 `SELECT rd.id, rd.kode_barang, b.nama_barang, rd.satuan_retur, rd.qty_input,
-                        rd.rasio_ke_pcs, rd.qty_total_pcs, rd.harga_satuan, rd.subtotal_retur,
-                        rd.kondisi_barang, rd.alasan_retur
-                   FROM retur_detail rd
-                   LEFT JOIN barang b ON b.kode_barang = rd.kode_barang
-                  WHERE rd.retur_id = ?
-                  ORDER BY rd.id`,
+            rd.rasio_ke_pcs, rd.qty_total_pcs, rd.harga_satuan, rd.subtotal_retur,
+            rd.kondisi_barang, rd.alasan_retur,
+            pd.no_faktur AS no_faktur_item,
+            IFNULL(phi.ppn_persen, 0) AS ppn_persen_item
+       FROM retur_detail rd
+       LEFT JOIN barang b ON b.kode_barang = rd.kode_barang
+       LEFT JOIN penjualan_detail pd ON pd.id_detail = rd.id_detail_penjualan
+       LEFT JOIN penjualan_header phi ON phi.no_faktur = pd.no_faktur
+      WHERE rd.retur_id = ?
+      ORDER BY rd.id`,
                 [id]
             )
         ]);
@@ -273,6 +278,7 @@ export async function DETAIL_RIWAYAT_RETUR(req, res) {
                 dpp_total: num(h.dpp_total),
                 ppn_persen: num(h.ppn_persen),
                 ppn_nominal: num(h.ppn_nominal),
+                ppn_persen_tujuan: num(h.ppn_persen_tujuan),
                 grand_total: num(h.grand_total),
                 jumlah_potong_piutang: num(h.jumlah_potong_piutang),
                 jumlah_refund_kas: num(h.jumlah_refund_kas)
@@ -288,13 +294,17 @@ export async function DETAIL_RIWAYAT_RETUR(req, res) {
                 harga_satuan: num(i.harga_satuan),
                 subtotal_retur: num(i.subtotal_retur),
                 kondisi_barang: i.kondisi_barang,
-                alasan_retur: i.alasan_retur
+                alasan_retur: i.alasan_retur,
+                no_faktur_item: i.no_faktur_item,
+                ppn_persen_item: num(i.ppn_persen_item)
             }))
         });
     } catch (err) {
         return handleError(res, err, 'DETAIL_RIWAYAT_RETUR');
     }
 }
+
+
 
 /* ───────────────────────── Export: bagian umum ───────────────────────── */
 async function withExportSlot(res, fn) {
