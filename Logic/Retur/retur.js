@@ -305,7 +305,7 @@ export async function CariDaftarFaktur(req, res) {
 // Hanya tampilkan barang dari faktur milik pelanggan yang sama dengan faktur tujuan.
 // Set false kalau lu mau bebas lintas pelanggan seperti versi lama.
 // true = hanya tampilkan barang dari faktur pelanggan yang sama dengan faktur tujuan
-const BATASI_PELANGGAN_SAMA = true; // gw ubah jadi false
+const BATASI_PELANGGAN_SAMA = true // gw ubah jadi false
 const MAX_RESULT = 20;
 const MAX_KEYWORD_LEN = 100;
 
@@ -370,9 +370,44 @@ export async function CARI_BARANG_FAKTUR_LAIN(req, res) {
             params
         );
 
-        if (rows.length === 0) return res.status(200).json({ Search: [] });
+        if (rows.length === 0) {
+            // Cek apakah kosong karena barang/faktur itu milik pelanggan lain
+            if (noFakturSekarang && BATASI_PELANGGAN_SAMA) {
+                try {
+                    const [cekPelanggan] = await db.query(
+                        `SELECT COUNT(*) AS jml
+                           FROM penjualan_detail pd
+                          INNER JOIN penjualan_header ph ON pd.no_faktur = ph.no_faktur
+                          INNER JOIN barang b ON pd.kode_barang = b.kode_barang
+                           LEFT JOIN pelanggan p ON ph.kode_pelanggan = p.kode_pelanggan
+                          WHERE ${where.filter(w => !w.includes('ph.kode_pelanggan = ?')).join(' AND ')}`,
+                        params.slice(0, params.length - 1)
+                    );
+                    if (Number(cekPelanggan[0]?.jml) > 0) {
+                        return res.status(200).json({
+                            Search: [],
+                            pesan:
+                                'SERVER SAY: Faktur/barang ini milik pelanggan yang berbeda.\n\n' +
+                                'Retur silang hanya dapat dilakukan antar faktur milik pelanggan yang sama, dengan alasan berikut:\n' +
+                                '1. Retur silang akan memotong piutang pada faktur tujuan. Apabila pelanggannya berbeda, piutang pelanggan lain akan berkurang tanpa ada transaksi retur dari pihaknya.\n' +
+                                '2. Pelanggan yang piutangnya terpotong memperoleh keuntungan padahal tidak melakukan retur, sedangkan pelanggan yang benar-benar melakukan retur tidak mendapatkan haknya.\n' +
+                                '3. Catatan piutang dan laporan keuangan menjadi tidak akurat dan sulit ditelusuri.\n\n' +
+                                'Silakan cari faktur milik pelanggan yang sama dengan faktur yang sedang dibuka.'
+                        });
+                    }
+                } catch (e) {
+                    console.error('[CARI_BARANG_FAKTUR_LAIN] cek pelanggan gagal:', e);
+                    return res.status(500).json({
+                        message: "Gagal memeriksa data pelanggan. Silakan coba lagi."
+                    })
+                }
+            }
+            return res.status(200).json({ Search: [] });
+        }
 
         const fakturList = [...new Set(rows.map(r => r.no_faktur_asal))];
+
+
         const detailIds = rows.map(r => r.id_detail_penjualan);
         const kodeList = [...new Set(rows.map(r => r.kode_barang))];
 
@@ -722,13 +757,14 @@ export async function ProsesRetur(req, res) {
 
         // 1. LOCK FAKTUR TUJUAN — gerbang serialisasi semua retur ke faktur ini
         const [fakturRows] = await conn.query(
-            `SELECT no_faktur, sisa_piutang, IFNULL(ppn_persen, 0) AS ppn_persen FROM penjualan_header WHERE no_faktur = ? FOR UPDATE`,
+            `SELECT no_faktur, kode_pelanggan, sisa_piutang, IFNULL(ppn_persen, 0) AS ppn_persen FROM penjualan_header WHERE no_faktur = ? FOR UPDATE`,
             [fakturAsli]
         );
 
         if (fakturRows.length === 0) throw new ValidationError('Faktur tidak ditemukan!', 404);
         const sisaPiutangSebelum = Number(fakturRows[0].sisa_piutang) || 0;
         const ppnPersenFakturTujuan = Number(fakturRows[0].ppn_persen) || 0; // dipakai untuk barang manual
+        const kodePelangganTujuan = fakturRows[0].kode_pelanggan;
 
         if (metode === 'POTONG_PIUTANG' && sisaPiutangSebelum <= 0) {
             throw new ValidationError(
@@ -785,6 +821,7 @@ export async function ProsesRetur(req, res) {
         if (fakturAsalList.length > 0) {
             const [rows] = await conn.query(
                 `SELECT h.no_faktur,
+                        h.kode_pelanggan,
                         IFNULL(h.diskon_global, 0) AS diskon_faktur,
                         IFNULL(h.ppn_persen, 0) AS ppn_persen,
                         IFNULL((SELECT SUM(GREATEST(d2.harga_jual * d2.jumlah_keluar - IFNULL(d2.diskon, 0), 0))
@@ -795,6 +832,13 @@ export async function ProsesRetur(req, res) {
                 [fakturAsalList]
             );
             for (const r of rows) {
+                // GUARD: retur silang hanya boleh antar faktur milik pelanggan yang sama
+                if (r.no_faktur !== fakturAsli && String(r.kode_pelanggan ?? '') !== String(kodePelangganTujuan ?? '')) {
+                    throw new ValidationError(
+                        `Retur silang ditolak! Faktur ${r.no_faktur} milik pelanggan lain. Retur silang hanya boleh antar faktur pelanggan yang sama. Lebih di perhatikan kembali, ya!`
+                    );
+                }
+
                 fakturCtxMap.set(r.no_faktur, {
                     diskon_faktur: Number(r.diskon_faktur) || 0,
                     ppn_persen: Number(r.ppn_persen) || 0,
