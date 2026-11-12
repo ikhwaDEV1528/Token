@@ -909,14 +909,39 @@ export async function HAPUSFAKTUR(req, res) {
         const hasil = await denganTransaksi(async (conn) => {
             const waktu = waktuSekarang();
 
+            // // 1) Kunci header
+            // const [hRows] = await conn.query(
+            //     `SELECT pembayaran FROM penjualan_header WHERE no_faktur = ? FOR UPDATE`,
+            //     [noFaktur]
+            // );
+            // if (hRows.length === 0) throw tolak(404, 'Faktur tidak ditemukan!');
+            // if ((Number(hRows[0].pembayaran) || 0) > 0) {
+            //     throw tolak(409, 'Faktur sudah ada pembayaran, tidak bisa dihapus. Selesaikan lewat retur/refund.');
+            // }
+
+            // const [bayarRows] = await conn.query(
+            //     `SELECT 1 FROM pembayaran_piutang_detail WHERE no_faktur = ? LIMIT 1`,
+            //     [noFaktur]
+            // );
+            // if (bayarRows.length > 0) {
+            //     throw tolak(409, 'Faktur punya riwayat pembayaran piutang, tidak bisa dihapus.');
+            // }
+
+            
+           
+            // DITAMBAH: wadah alasan penolakan
+            const alasan = [];
+
             // 1) Kunci header
             const [hRows] = await conn.query(
-                `SELECT pembayaran FROM penjualan_header WHERE no_faktur = ? FOR UPDATE`,
+                `SELECT pembayaran, status FROM penjualan_header WHERE no_faktur = ? FOR UPDATE`,
                 [noFaktur]
             );
             if (hRows.length === 0) throw tolak(404, 'Faktur tidak ditemukan!');
-            if ((Number(hRows[0].pembayaran) || 0) > 0) {
-                throw tolak(409, 'Faktur sudah ada pembayaran, tidak bisa dihapus. Selesaikan lewat retur/refund.');
+
+            const sudahBayar = Number(hRows[0].pembayaran) || 0;
+            if (sudahBayar > 0) {
+                alasan.push(`Faktur ini sudah ada pembayaran sebesar Rp ${sudahBayar.toLocaleString('id-ID')}.`);
             }
 
             const [bayarRows] = await conn.query(
@@ -924,8 +949,13 @@ export async function HAPUSFAKTUR(req, res) {
                 [noFaktur]
             );
             if (bayarRows.length > 0) {
-                throw tolak(409, 'Faktur punya riwayat pembayaran piutang, tidak bisa dihapus.');
+                alasan.push('Faktur ini punya riwayat pembayaran piutang.');
             }
+
+            if (/^lunas$/i.test(String(hRows[0].status || '').trim())) {
+                alasan.push('Faktur ini sudah pernah berstatus lunas.');
+            }
+
 
             // 2) Semua item faktur
             const [items] = await conn.query(
@@ -936,6 +966,7 @@ export async function HAPUSFAKTUR(req, res) {
                 [noFaktur]
             );
 
+
             // 3) Tidak boleh ada item yang sudah diretur
             if (items.length > 0) {
                 const [returRows] = await conn.query(
@@ -943,8 +974,15 @@ export async function HAPUSFAKTUR(req, res) {
                     [items.map((i) => i.id_detail)]
                 );
                 if (returRows.length > 0) {
-                    throw tolak(409, 'Ada item faktur yang sudah diretur, faktur tidak bisa dihapus.');
+                    alasan.push('Sudah pernah ada retur pada item di faktur ini.');
                 }
+            }
+
+            // DITAMBAH: kalau ada alasan, tolak sekali dengan semua alasannya
+            if (alasan.length > 0) {
+                const e = new Error('Faktur tidak bisa dihapus.');
+                e.alasan = alasan;
+                throw e;
             }
 
             // 4) Hitung pcs yang dikembalikan per item (rasio wajib valid)
@@ -1005,6 +1043,10 @@ export async function HAPUSFAKTUR(req, res) {
 
         return res.status(200).json({ message: 'Faktur berhasil dihapus dan stok dikembalikan', ...hasil });
     } catch (err) {
+        // DITAMBAH: penolakan dengan daftar alasan
+        if (err && Array.isArray(err.alasan)) {
+            return res.status(409).json({ message: 'Faktur tidak bisa dihapus.', alasan: err.alasan });
+        }
         return kirimError(res, err, 'HAPUSFAKTUR');
     }
 }
