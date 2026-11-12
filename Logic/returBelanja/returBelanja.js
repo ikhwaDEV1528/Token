@@ -537,8 +537,27 @@ async function rbProses(conn, { noFaktur, catatan, items }, idAdmin) {
     // 🔴 KODE BARU (Hitung PPN dan Tambah ke Total Potong Hutang):
     const dppTotalRetur = grandTotal;
     const ppnPersen = Number(faktur.ppn_persen) || 0;
-    const ppnNominalRetur = Math.round((dppTotalRetur * ppnPersen) / 100);
-    const grandTotalRetur = dppTotalRetur + ppnNominalRetur; // Total Potong Hutang include PPN
+    let ppnNominalRetur = Math.round((dppTotalRetur * ppnPersen) / 100);
+    // const grandTotalRetur = dppTotalRetur + ppnNominalRetur; // Total Potong Hutang include PPN
+
+    // TAMBAHAN: koreksi pembulatan kumulatif
+    if (ppnPersen > 0) {
+        const [prev] = await conn.query(
+            `SELECT IFNULL(SUM(total_nominal_retur), 0) AS dpp,
+                IFNULL(SUM(ppn_nominal), 0) AS ppn
+           FROM retur_pembelian_header
+          WHERE no_faktur = ?`,
+            [faktur.no_faktur]
+        );
+        const dppSebelum = Number(prev[0].dpp) || 0;
+        const ppnSebelum = Number(prev[0].ppn) || 0;
+        ppnNominalRetur = Math.max(
+            0,
+            Math.round(((dppSebelum + dppTotalRetur) * ppnPersen) / 100) - ppnSebelum
+        );
+    }
+
+    const grandTotalRetur = dppTotalRetur + ppnNominalRetur; // sekarang pakai PPN yang sudah dikoreksi
 
     if (!(grandTotalRetur > 0)) throw new ReturBelanjaError('Total nilai retur 0, retur tidak dapat diproses!');
 

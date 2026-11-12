@@ -24,6 +24,7 @@ export const db = mysql.createPool({
 
 // LOCALHOST TESTING //
 
+
 // export const db = mysql.createPool({
 //   host: 'localhost', 
 //   user: 'root', 

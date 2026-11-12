@@ -1089,6 +1089,29 @@ export async function ProsesRetur(req, res) {
         for (const [persen, dpp] of dppPerTarif) {
             if (persen > 0) ppnNominalRetur += Math.round((dpp * persen) / 100);
         }
+
+        // ===== TAMBAHAN: koreksi pembulatan kumulatif (tarif tunggal) =====
+        if (dppPerTarif.size === 1) {
+            const persenTunggal = [...dppPerTarif.keys()][0];
+            if (persenTunggal > 0) {
+                const [prev] = await conn.query(
+                    `SELECT IFNULL(SUM(total_nominal_retur), 0) AS dpp,
+                     IFNULL(SUM(ppn_nominal), 0) AS ppn
+                      FROM retur_header
+                      WHERE no_faktur = ? AND id <> ? AND ppn_persen = ?`,
+                    [fakturAsli, idReturHeader, persenTunggal]
+                );
+
+                const dppSebelum = Number(prev[0].dpp) || 0;
+                const ppnSebelum = Number(prev[0].ppn) || 0;
+                ppnNominalRetur = Math.max(
+                    0,
+                    Math.round(((dppSebelum + dppRetur) * persenTunggal) / 100) - ppnSebelum
+                );
+            }
+        }
+        // ===== AKHIR TAMBAHAN =====
+
         // kolom header cuma 1: kalau tarif campur, simpan tarif efektif
         const ppnPersenRetur = dppPerTarif.size === 1
             ? [...dppPerTarif.keys()][0]
