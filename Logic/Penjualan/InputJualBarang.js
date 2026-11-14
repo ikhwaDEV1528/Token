@@ -875,6 +875,48 @@ export async function AMBIL_FAKTUR_PENJUALAN(req, res) {
       items: typeof row.items === 'string' ? JSON.parse(row.items) : (row.items || [])
     }));
 
+    // ── STATUS RETUR per faktur: null | 'SEBAGIAN' | 'HABIS' ──
+    if (formattedRows.length > 0) {
+      const daftarFaktur = formattedRows.map((r) => r.no_faktur);
+
+      const [returInfo] = await db.query(
+        `SELECT pd.no_faktur,
+            pd.jumlah_keluar,
+            COALESCE(bs.rasio_ke_pcs, 1) AS rasio,
+            COALESCE(r.pcs, 0) AS retur_pcs
+       FROM penjualan_detail pd
+       LEFT JOIN barang_satuan bs
+              ON bs.kode_barang = pd.kode_barang AND bs.nama_satuan = pd.satuan
+       LEFT JOIN (
+            SELECT rd.id_detail_penjualan, SUM(rd.qty_total_pcs) AS pcs
+              FROM retur_detail rd
+              JOIN penjualan_detail p2 ON p2.id_detail = rd.id_detail_penjualan
+             WHERE p2.no_faktur IN (?)
+             GROUP BY rd.id_detail_penjualan
+       ) r ON r.id_detail_penjualan = pd.id_detail
+      WHERE pd.no_faktur IN (?)`,
+        [daftarFaktur, daftarFaktur]
+      );
+
+      const statusMap = new Map(); // no_faktur -> { pernah, semuaHabis, adaItem }
+      for (const row of returInfo) {
+        const jumlah = Number(row.jumlah_keluar) || 0;
+        if (jumlah <= 0) continue; // baris bonus murni tidak bisa diretur, jangan dihitung
+        const s = statusMap.get(row.no_faktur) || { pernah: false, semuaHabis: true, adaItem: false };
+        const totalPcs = jumlah * (Number(row.rasio) || 1);
+        const returPcs = Number(row.retur_pcs) || 0;
+        s.adaItem = true;
+        if (returPcs > 0) s.pernah = true;
+        if (returPcs < totalPcs) s.semuaHabis = false;
+        statusMap.set(row.no_faktur, s);
+      }
+
+      for (const f of formattedRows) {
+        const s = statusMap.get(f.no_faktur);
+        f.status_retur = !s || !s.pernah ? null : (s.adaItem && s.semuaHabis ? 'HABIS' : 'SEBAGIAN');
+      }
+    }
+
     return res.status(200).json({
       success: true,
       message: "Berhasil mengambil data faktur penjualan",

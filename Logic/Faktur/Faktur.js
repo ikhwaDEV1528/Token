@@ -1,4 +1,5 @@
 
+import { json } from "express";
 import { db } from "../../db.js";
 
 /**
@@ -762,6 +763,13 @@ export async function TAMBAHITEMFAKTUR(req, res) {
         if (sudahAda.has(kode)) {
             return res.status(400).json({ message: `Barang '${kode}' terkirim dobel, gabungkan jumlahnya.` });
         }
+        if(raw.kode_barang){
+            console.log(raw)
+            return res.status(400).json({
+                message:`Barang ini ${raw.kode_barang} sudah ada di faktur. Tambahkan melalui edit item pada faktur ${noFaktur}`
+            })
+        }
+
         sudahAda.add(kode);
         items.push({ kode, satuanInput, jumlah, diskon });
     }

@@ -3,6 +3,8 @@ import { DAFTAR_PIUTANG_PELANGGAN,
     DETAIL_PIUTANG_PELANGGAN,BAYAR_PIUTANG,RIWAYAT_PEMBAYARAN } from '../../Logic/Piutang/Piutang.js';
 import { CekRequestAkses } from '../../middleware/Token/cek_request_akses.js';
 import { doubleCsrfProtection } from '../../configurasiCrsf.js';
+import { RIWAYAT_SEMUA_PEMBAYARAN } from '../../Logic/Piutang/riwayatPiutang.js';
+
 
 
 const Piutang = express.Router();
@@ -12,6 +14,8 @@ const Piutang = express.Router();
    Piutang.get('/DETAIL_PIUTANG_PELANGGAN', DETAIL_PIUTANG_PELANGGAN);
    Piutang.post('/BAYAR_PIUTANG',CekRequestAkses, doubleCsrfProtection, BAYAR_PIUTANG);
    Piutang.get('/RIWAYAT_PEMBAYARAN', RIWAYAT_PEMBAYARAN);
+   Piutang.get("/RIWAYAT_SEMUA_PEMBAYARAN" , RIWAYAT_SEMUA_PEMBAYARAN)
+
 
 
    export default Piutang;
