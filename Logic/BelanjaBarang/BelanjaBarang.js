@@ -3,538 +3,6 @@ import { generateKodeBarang } from "../Barang/Buat_kode_barang.js";
 
 
 
-// // PROSES BELANJA ASLI ORGINAL//
-
-// class ValidationError extends Error {
-//   constructor(message) {
-//     super(message);
-//     this.name = 'ValidationError';
-//   }
-// }
-
-
-// export async function FunBelanjaBarang(req, res) {
-//   const { faktur, ListPesanan } = req.body;
-
-//   // 1. Destructuring data faktur
-//   const no_faktur = faktur?.no_faktur;
-//   const ppn = faktur?.ppn // field baru ppn
-//   const supplier_id = faktur?.dataSupplier?.id_supplier;
-//   const nama_supplier = faktur?.dataSupplier?.nama_supplier;
-//   const tanggal_belanja = faktur?.tanggal_belanja;
-//   const diskon_faktur = Number(faktur?.diskon_faktur) || 0;
-
-//   // 2. Validasi input faktur
-//   if (!no_faktur || !supplier_id || !nama_supplier || !tanggal_belanja) {
-//     return res.status(400).json({ message: "Data Faktur ada yang belum terisi!" });
-//   }
-
-//   const rawDiskonFaktur = String(faktur?.diskon_faktur ?? '0').trim();
-//   if (!/^\d+(\.\d{1,2})?$/.test(rawDiskonFaktur)) {
-//     return res.status(400).json({
-//       message: "Diskon faktur harus berupa angka murni 0-100 (tanpa %, koma, minus, atau huruf)!"
-//     });
-//   }
-
-//   // 2b. FIX: diskon_faktur gak boleh negatif
-//   if (diskon_faktur < 0) {
-//     return res.status(400).json({ message: "Diskon faktur tidak boleh negatif!" });
-//   }
-
-//   // 3. Validasi list pesanan
-//   if (!Array.isArray(ListPesanan) || ListPesanan.length === 0) {
-//     return res.status(400).json({ message: "List pesanan kosong atau tidak valid!" });
-//   }
-
-
-
-
-//   // 3b. VALIDASI ITEM: jumlah & harga harus > 0, kode_barang wajib ada
-//   for (const item of ListPesanan) {
-//     const jumlah = Number(item.jumlah);
-//     const harga = Number(item.harga_satuan ?? item.harga_dasar);
-//     if (!jumlah || jumlah <= 0) {
-//       return res.status(400).json({
-//         message: `Jumlah beli untuk "${item.nama_barang || item.kode_barang || 'item'}" harus lebih dari 0!`
-//       });
-//     }
-
-//     const rawJumlah = String(item?.jumlah ?? '').trim();
-//     if (!/^\d+$/.test(rawJumlah) || !Number.isFinite(jumlah) || jumlah <= 0) {
-//       return res.status(400).json({
-//         status: "error",
-//         message: `Jumlah pembelian untuk '${item.kode_barang}' tidak valid (harus angka murni lebih dari 0)`
-//       });
-//     }
-
-//     if (isNaN(harga) || harga < 0) {
-//       return res.status(400).json({
-//         message: `Harga satuan untuk "${item.nama_barang || item.kode_barang || 'item'}" tidak valid!`
-//       });
-//     }
-
-//     if (item.status !== 'BARANG BARU' && !item.kode_barang) {
-//       return res.status(400).json({
-//         message: `Kode barang wajib diisi untuk item "${item.nama_barang || 'item'}"!`
-//       });
-//     }
-//   }
-
-//   // 4. Hitung total harga & diskon faktur
-//   // 4. Hitung total harga faktur (SETELAH DIPOTONG DISKON DISTRIBUTOR)
-//   const total_harga = ListPesanan.reduce((acc, item) => {
-//     const harga_satuan = Number(item.harga_satuan ?? item.harga_dasar) || 0;
-//     const diskon_dist = Number(item.persentase_diskon_distributor) || 0;
-
-//     // Modal bersih per item setelah diskon distributor
-//     const modal_bersih = Math.max(0, harga_satuan - Math.round((harga_satuan * diskon_dist) / 100));
-//     const jumlah = Number(item.jumlah) || 0;
-
-//     return acc + (modal_bersih * jumlah);
-//   }, 0);
-
-//   const total_harga_setelah_diskon = Math.max(total_harga - diskon_faktur, 0);
-
-//   // 🔴 TAMBAHKAN BARIS INI: Rasio Alokasi Diskon Faktur Global
-//   const rasioFaktur = total_harga > 0 ? (total_harga_setelah_diskon / total_harga) : 1;
-
-//   // 4b. [HUTANG SUPPLIER] Validasi pembayaran toko saat belanja.
-//   // Nominal dibayar dari FE hanya dipakai sebagai input; sisa hutang & status
-//   // SELALU dihitung ulang di server.
-//   const rawDibayar = String(faktur?.dibayar ?? '').trim() || '0';
-//   if (!/^\d{1,13}$/.test(rawDibayar)) {
-//     return res.status(400).json({
-//       message: "Nominal dibayar harus berupa angka bulat murni (tanpa titik, koma, minus, atau huruf)!"
-//     });
-//   }
-//   const dibayar = Number(rawDibayar);
-//   if (dibayar > total_harga_setelah_diskon) {
-//     return res.status(400).json({
-//       message: `Nominal dibayar (Rp ${dibayar.toLocaleString('id-ID')}) tidak boleh melebihi total belanja (Rp ${total_harga_setelah_diskon.toLocaleString('id-ID')})!`
-//     });
-//   }
-
-//   const sisa_hutang = total_harga_setelah_diskon - dibayar;
-//   const status_bayar = sisa_hutang > 0 ? 'HUTANG' : 'LUNAS';
-
-//   // Jatuh tempo hanya relevan kalau masih ada sisa hutang (opsional).
-//   let jatuh_tempo = null;
-//   const rawJatuhTempo = String(faktur?.jatuh_tempo ?? '').trim();
-//   if (sisa_hutang > 0 && rawJatuhTempo !== '') {
-//     const cocok = /^(\d{4})-(\d{2})-(\d{2})$/.exec(rawJatuhTempo);
-//     const tgl = cocok ? new Date(Date.UTC(+cocok[1], +cocok[2] - 1, +cocok[3])) : null;
-//     const tanggalValid = tgl
-//       && tgl.getUTCFullYear() === +cocok[1]
-//       && tgl.getUTCMonth() === +cocok[2] - 1
-//       && tgl.getUTCDate() === +cocok[3];
-//     if (!tanggalValid) {
-//       return res.status(400).json({ message: "Format jatuh tempo tidak valid (harus YYYY-MM-DD)!" });
-//     }
-//     const tglBelanja10 = String(tanggal_belanja).slice(0, 10);
-//     if (/^\d{4}-\d{2}-\d{2}$/.test(tglBelanja10) && rawJatuhTempo < tglBelanja10) {
-//       return res.status(400).json({ message: "Jatuh tempo tidak boleh sebelum tanggal belanja!" });
-//     }
-//     jatuh_tempo = rawJatuhTempo;
-//   }
-
-//   const connection = await db.getConnection();
-
-//   try {
-//     await connection.beginTransaction();
-
-//     // A. GENERATE KODE BARANG UNTUK 'BARANG BARU'
-//     // NOTE: pastikan generateKodeBarang() menghasilkan kode yang benar-benar unik.
-//     // Kalau sampai collision dengan kode_barang yang sudah ada, INSERT ... ON
-//     // DUPLICATE KEY UPDATE di bawah akan nganggep ini restok barang LAMA yang
-//     // gak terkait, dan nyampur stok/harga dua barang yang sebenarnya berbeda.
-//     for (let item of ListPesanan) {
-//       if (item.status === 'BARANG BARU' && (!item.kode_barang || item.kode_barang === 'AUTO' || item.kode_barang === '')) {
-//         item.kode_barang = generateKodeBarang();
-//       }
-//     }
-
-//     // A2. BATCH PRE-FETCH
-//     const kodeBarangRestok = [
-//       ...new Set(
-//         ListPesanan
-//           .filter((it) => it.status !== 'BARANG BARU')
-//           .map((it) => it.kode_barang)
-//       )
-//     ];
-
-//     const satuanMap = new Map();
-//     const persentaseExistingMap = new Map();
-
-//     if (kodeBarangRestok.length > 0) {
-//       const [satuanRowsAll] = await connection.query(
-//         `SELECT id, kode_barang, nama_satuan, rasio_ke_pcs FROM barang_satuan WHERE kode_barang IN (?)`,
-//         [kodeBarangRestok]
-//       );
-//       for (const row of satuanRowsAll) {
-//         if (!satuanMap.has(row.kode_barang)) satuanMap.set(row.kode_barang, []);
-//         satuanMap.get(row.kode_barang).push(row);
-//       }
-
-//       const [barangRowsAll] = await connection.query(
-//         `SELECT kode_barang, persentase_diskon_distributor, persentase_fee_harga_jual 
-//          FROM barang WHERE kode_barang IN (?)`,
-//         [kodeBarangRestok]
-//       );
-//       for (const row of barangRowsAll) {
-//         persentaseExistingMap.set(row.kode_barang, {
-//           diskon: Number(row.persentase_diskon_distributor) || 0,
-//           fee: Number(row.persentase_fee_harga_jual) || 0
-//         });
-//       }
-//     }
-
-//     // B. INSERT PEMBELIAN HEADER
-//     const [rowsHeader] = await connection.query(
-//       `INSERT INTO pembelian_header (no_faktur, supplier_id, nama_supplier, tanggal_belanja, subtotal, total_harga, diskon, created_at, dibayar, sisa_hutang, jatuh_tempo, status_bayar)
-//        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-//       [
-//         no_faktur,
-//         supplier_id,
-//         nama_supplier,
-//         tanggal_belanja,
-//         total_harga,
-//         total_harga_setelah_diskon,
-//         diskon_faktur,
-//         new Date(),
-//         dibayar,
-//         sisa_hutang,
-//         jatuh_tempo,
-//         status_bayar
-//       ]
-//     );
-
-//     const id_pembelian = rowsHeader.insertId;
-
-//     // C. MAPPING DATA PEMBELIAN DETAIL & UPDATE MASTER BARANG
-//     const values_pembelian_detail = [];
-//     const logItems = [];
-//     const aggregatedBarang = new Map();
-//     const values_insert_satuan = [];
-//     const kodeBarangBaruSudahDiproses = new Set();
-
-//     for (let item of ListPesanan) {
-//       const harga_satuan = Number(item.harga_satuan ?? item.harga_dasar) || 0;
-//       const jumlah_beli = Number(item.jumlah) || 0;
-//       const status_item = item.status || "RESTOK";
-
-//       let rasio = Number(item.rasio_ke_pcs);
-
-//       if (!rasio || isNaN(rasio) || rasio <= 0) {
-//         if (item.status === 'BARANG BARU') {
-//           throw new ValidationError(
-//             `Rasio (isi per satuan) untuk barang baru "${item.nama_barang || item.kode_barang}" wajib diisi!`
-//           );
-//         }
-
-//         const kandidatSatuan = satuanMap.get(item.kode_barang) || [];
-//         let baris = null;
-
-//         if (item.id) {
-//           baris = kandidatSatuan.find((r) => String(r.id) === String(item.id)) || null;
-//         } else if (item.nama_satuan) {
-//           baris = kandidatSatuan.find(
-//             (r) => (r.nama_satuan || '').toUpperCase() === item.nama_satuan.toUpperCase()
-//           ) || null;
-//         } else {
-//           throw new ValidationError(
-//             `Satuan pembelian untuk "${item.nama_barang || item.kode_barang}" tidak jelas (id_satuan/nama_satuan tidak dikirim)!`
-//           );
-//         }
-
-//         if (baris && Number(baris.rasio_ke_pcs) > 0) {
-//           rasio = Number(baris.rasio_ke_pcs);
-//         } else {
-//           throw new ValidationError(
-//             `Data satuan untuk "${item.nama_barang || item.kode_barang}" tidak ditemukan di database!`
-//           );
-//         }
-//       }
-
-//       const pcs_masuk = jumlah_beli * rasio;
-
-//       // Ambil satuan yang dikirim FE. Jika kosong, baru default ke 'KARTON'
-//       const namaSatuanItem = (item.nama_satuan || item.satuan || 'KARTON').toUpperCase();
-
-//       let diskon_dist = Number(item.persentase_diskon_distributor);
-//       let fee_jual = Number(item.persentase_fee_harga_jual);
-
-//       if (isNaN(diskon_dist) || isNaN(fee_jual)) {
-//         const existing = persentaseExistingMap.get(item.kode_barang);
-//         diskon_dist = isNaN(diskon_dist) ? (existing?.diskon ?? 0) : diskon_dist;
-//         fee_jual = isNaN(fee_jual) ? (existing?.fee ?? 0) : fee_jual;
-//       }
-
-//       // Modal bersih per item
-//       const modal_bersih = Math.max(0, harga_satuan - Math.round((harga_satuan * diskon_dist) / 100));
-
-//       // 🔴 TAMBAHKAN BARIS INI: Modal riil setelah dipotong diskon faktur
-//       const modal_riil_faktur = modal_bersih * rasioFaktur;
-//       // Subtotal per baris item dihitung dari modal bersih
-//       const subtotal = modal_bersih * jumlah_beli;
-
-//       const harga_jual = Math.round(modal_bersih * (1 + (fee_jual / 100)));
-//       const margin = Math.round(harga_jual - modal_bersih);
-
-//       values_pembelian_detail.push([
-//         id_pembelian,
-//         item.kode_barang,
-//         harga_satuan,
-//         jumlah_beli,
-//         subtotal,
-//         status_item,
-//         namaSatuanItem // 👈 Menggunakan variabel ini, bukan string 'KARTON' keras
-//       ]);
-
-//       logItems.push({
-//         kode_barang: item.kode_barang,
-//         pcs_masuk,
-//         qty_input: jumlah_beli,
-//         satuan_input: namaSatuanItem,
-//         hpp_per_pcs: modal_riil_faktur / rasio
-//       });
-
-//       // NOTE: kalau ada >1 baris di ListPesanan dengan kode_barang yang SAMA
-//       // (misal beli barang sama dalam 2 satuan berbeda di 1 faktur), pcs_masuk
-//       // di bawah diakumulasi dengan benar, TAPI harga_satuan/diskon_dist/fee_jual/
-//       // harga_jual/margin akan KETIMPA baris yang diproses TERAKHIR, bukan digabung.
-//       // Cek apakah ini memang perilaku yang diinginkan.
-//       if (aggregatedBarang.has(item.kode_barang)) {
-//         const existing = aggregatedBarang.get(item.kode_barang);
-//         existing.pcs_masuk += pcs_masuk;
-//         existing.harga_satuan = harga_satuan;
-//         existing.diskon_dist = diskon_dist;
-//         existing.fee_jual = fee_jual;
-//         existing.harga_jual = harga_jual;
-//         existing.margin = margin;
-//         existing.nama_barang = item.nama_barang || existing.nama_barang;
-//       } else {
-//         aggregatedBarang.set(item.kode_barang, {
-//           kode_barang: item.kode_barang,
-//           nama_barang: item.nama_barang || "Tanpa Nama",
-//           harga_satuan,
-//           diskon_dist,
-//           fee_jual,
-//           harga_jual,
-//           margin,
-//           pcs_masuk,
-//           rasio_utamanya: rasio // Simpan rasio satuan terbesar
-//         });
-//       }
-
-//       if (item.status === 'BARANG BARU' && !kodeBarangBaruSudahDiproses.has(item.kode_barang)) {
-//         kodeBarangBaruSudahDiproses.add(item.kode_barang);
-
-//         const namaSatuanUtama = (item.nama_satuan || 'KARTON').toUpperCase();
-
-//         values_insert_satuan.push([
-//           item.kode_barang,
-//           namaSatuanUtama,
-//           rasio,
-//           harga_jual,
-//           3
-//         ]);
-
-//         if (Array.isArray(item.list_satuan)) {
-//           item.list_satuan.forEach((s) => {
-//             const namaSatuan = (s.nama_satuan || '').toUpperCase();
-//             if (namaSatuan === namaSatuanUtama) return;
-
-//             const rasioSatuan = Number(s.rasio_ke_pcs) || 0;
-//             const hargaJualSatuan = Number(s.harga_jual) || 0;
-
-//             if (rasioSatuan <= 0 || hargaJualSatuan <= 0) return;
-
-//             values_insert_satuan.push([
-//               item.kode_barang,
-//               s.nama_satuan || 'SATUAN',
-//               rasioSatuan,
-//               hargaJualSatuan,
-//               Number(s.level) || 1
-//             ]);
-//           });
-//         }
-//       }
-//     }
-
-//     const values_update_stok = Array.from(aggregatedBarang.values()).map((b) => [
-//       b.kode_barang,
-//       b.nama_barang,
-//       b.harga_satuan,
-//       b.diskon_dist,
-//       b.fee_jual,
-//       b.harga_jual,
-//       b.margin,
-//       b.pcs_masuk
-//     ]);
-
-
-//     // C2. Kunci baris barang lama & ambil stok awal (sebelum di-upsert)
-//     const saldo = new Map();
-//     if (kodeBarangRestok.length > 0) {
-//       const [stokAwalRows] = await connection.query(
-//         `SELECT kode_barang, stok_pcs FROM barang WHERE kode_barang IN (?) FOR UPDATE`,
-//         [kodeBarangRestok]
-//       );
-//       for (const r of stokAwalRows) {
-//         saldo.set(r.kode_barang, Number(r.stok_pcs) || 0);
-//       }
-//     }
-//     // kode yang tidak ada di map = barang baru, stok awal 0
-
-//     // D. UPSERT KE TABEL `barang` (MASTER PARENT)
-//     await connection.query(
-//       `INSERT INTO barang (
-//         kode_barang, 
-//         nama_barang, 
-//         harga_dasar, 
-//         persentase_diskon_distributor, 
-//         persentase_fee_harga_jual, 
-//         harga_jual_produk_ke_pelanggan, 
-//         margin, 
-//         stok_pcs
-//       ) 
-//        VALUES ? 
-//        ON DUPLICATE KEY UPDATE 
-//          stok_pcs = stok_pcs + VALUES(stok_pcs),
-//          nama_barang = VALUES(nama_barang),
-//          harga_dasar = VALUES(harga_dasar),
-//          persentase_diskon_distributor = VALUES(persentase_diskon_distributor),
-//          persentase_fee_harga_jual = VALUES(persentase_fee_harga_jual),
-//          harga_jual_produk_ke_pelanggan = VALUES(harga_jual_produk_ke_pelanggan),
-//          margin = VALUES(margin)`,
-//       [values_update_stok]
-//     );
-
-//     // E. INSERT KE `pembelian_detail` (CHILD TABLE)
-//     await connection.query(
-//       `INSERT INTO pembelian_detail (pembelian_id, kode_barang, harga_satuan, jumlah, subtotal, status,satuan) 
-//        VALUES ?`,
-//       [values_pembelian_detail]
-//     );
-
-
-//         // H. CATAT KE STOK_LOG (satu baris per item, running balance per kode barang)
-//     const tglLog = new Intl.DateTimeFormat('sv-SE', {
-//       timeZone: 'Asia/Jakarta',
-//       year: 'numeric', month: '2-digit', day: '2-digit',
-//       hour: '2-digit', minute: '2-digit', second: '2-digit',
-//       hour12: false
-//     }).format(new Date()); // YYYY-MM-DD HH:mm:ss
-
-//     const valuesStokLog = logItems.map((l) => {
-//       const stokAwalNow = saldo.get(l.kode_barang) ?? 0;
-//       const stokAkhirNow = stokAwalNow + l.pcs_masuk;
-//       saldo.set(l.kode_barang, stokAkhirNow); // kode duplikat tetap berurutan
-
-//       return [
-//         tglLog,                 // tanggal
-//         l.kode_barang,          // kode_barang
-//         stokAwalNow,            // stok_awal
-//         l.pcs_masuk,            // pembelian
-//         0,                      // penjualan
-//         stokAkhirNow,           // stok_akhir
-//         'PEMBELIAN',            // jenis_transaksi
-//         'BAGUS',                // kondisi
-//         l.pcs_masuk,            // jumlah (PCS, positif)
-//         l.pcs_masuk,            // qty_perubahan (+ masuk)
-//         l.satuan_input,         // satuan_input
-//         l.qty_input,            // qty_input
-//         'PEMBELIAN',            // referensi_tipe
-//         no_faktur,              // referensi_no
-//         l.hpp_per_pcs,          // hpp_per_pcs
-//         `Pembelian dari ${nama_supplier} Faktur ${no_faktur}`, // keterangan
-//         req.id_admin ? String(req.id_admin) : null             // dibuat_oleh
-//       ];
-//     });
-
-//     await connection.query(
-//       `INSERT INTO stok_log (
-//         tanggal, kode_barang, stok_awal, pembelian, penjualan, stok_akhir,
-//         jenis_transaksi, kondisi, jumlah, qty_perubahan,
-//         satuan_input, qty_input, referensi_tipe, referensi_no,
-//         hpp_per_pcs, keterangan, dibuat_oleh
-//       ) VALUES ?`,
-//       [valuesStokLog]
-//     );
-
-//     // F. BULK INSERT `barang_satuan` UNTUK BARANG BARU
-//     if (values_insert_satuan.length > 0) {
-//       await connection.query(
-//         `INSERT INTO barang_satuan (kode_barang, nama_satuan, rasio_ke_pcs, harga_jual, level) 
-//          VALUES ?`,
-//         [values_insert_satuan]
-//       );
-//     }
-
-//     // G. UPDATE HARGA JUAL SATUAN BERDASARKAN LEVEL SATUAN (100% DINAMIS)
-//     const listKodeBarang = Array.from(aggregatedBarang.keys());
-//     if (listKodeBarang.length > 0) {
-//       await connection.query(
-//         `UPDATE barang_satuan bs
-//          JOIN barang b ON bs.kode_barang = b.kode_barang
-//          JOIN (
-//            SELECT kode_barang, rasio_ke_pcs 
-//            FROM barang_satuan 
-//            WHERE level = 3 AND kode_barang IN (?)
-//          ) bs_max ON bs.kode_barang = bs_max.kode_barang
-//          SET bs.harga_jual = CASE 
-//            WHEN bs.level = 3 THEN b.harga_jual_produk_ke_pelanggan
-//            ELSE ROUND((b.harga_jual_produk_ke_pelanggan / NULLIF(bs_max.rasio_ke_pcs, 0)) * bs.rasio_ke_pcs)
-//          END
-//          WHERE bs.kode_barang IN (?)`,
-//         [listKodeBarang, listKodeBarang]
-//       );
-//     }
-
-
-
-//     // COMMIT TRANSAKSI
-//     await connection.commit();
-
-//     return res.status(200).json({
-//       success: true,
-//       message: "Transaksi belanja berhasil diselesaikan dan stok PCS berhasil diupdate!",
-//       pembelian_id: id_pembelian,
-//       subtotal: total_harga,
-//       total_harga: total_harga_setelah_diskon,
-//       dibayar,
-//       sisa_hutang,
-//       status_bayar,
-//     });
-
-//   } catch (err) {
-//     await connection.rollback();
-//     console.error("Error BelanjaBarang Transaction:", err);
-
-//     // FIX: error validasi bisnis (ValidationError) -> 400, bukan 500
-//     if (err instanceof ValidationError) {
-//       return res.status(400).json({ message: err.message });
-//     }
-
-//     // FIX: no_faktur duplikat (unique constraint) -> 409 + pesan jelas
-//     if (err.code === 'ER_DUP_ENTRY') {
-//       return res.status(409).json({ message: "No faktur ini sudah pernah diinput sebelumnya!" });
-//     }
-
-//     // FIX: error server/DB lain -> 500, TANPA expose err.message mentah ke client
-//     return res.status(500).json({
-//       message: "Gagal menyimpan transaksi belanja, silahkan coba lagi.",
-//     });
-
-//   } finally {
-//     connection.release();
-//   }
-// }
-
-
-
-
-
 class ValidationError extends Error {
   constructor(message) {
     super(message);
@@ -560,6 +28,28 @@ export async function FunBelanjaBarang(req, res) {
     return res.status(400).json({ message: "Data Faktur ada yang belum terisi!" });
   }
 
+  // GUARD: cegah object/array masuk ke query
+  if ([no_faktur, supplier_id, nama_supplier, tanggal_belanja].some((v) => typeof v === 'object')) {
+    return res.status(400).json({ message: "Format data faktur tidak valid!" });
+  }
+  if (!/^\d+$/.test(String(supplier_id))) {
+    return res.status(400).json({ message: "ID supplier tidak valid!" });
+  }
+
+  // GUARD: tanggal belanja harus tanggal yang benar (YYYY-MM-DD)
+  const mTgl = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(tanggal_belanja).slice(0, 10));
+  const dTgl = mTgl ? new Date(Date.UTC(+mTgl[1], +mTgl[2] - 1, +mTgl[3])) : null;
+  if (
+    !dTgl ||
+    dTgl.getUTCFullYear() !== +mTgl[1] ||
+    dTgl.getUTCMonth() !== +mTgl[2] - 1 ||
+    dTgl.getUTCDate() !== +mTgl[3] ||
+    +mTgl[1] < 2000 || +mTgl[1] > 2100
+  ) {
+    return res.status(400).json({ message: "Tanggal belanja tidak valid!" });
+  }
+
+
   const rawDiskonFaktur = String(faktur?.diskon_faktur ?? '0').trim();
   if (!/^\d+(\.\d{1,2})?$/.test(rawDiskonFaktur)) {
     return res.status(400).json({
@@ -578,6 +68,10 @@ export async function FunBelanjaBarang(req, res) {
   // 3. Validasi list pesanan
   if (!Array.isArray(ListPesanan) || ListPesanan.length === 0) {
     return res.status(400).json({ message: "List pesanan kosong atau tidak valid!" });
+  }
+
+  if (ListPesanan.length > 100) {
+    return res.status(400).json({ message: "Jumlah item dalam satu faktur terlalu banyak!" });
   }
 
   for (const item of ListPesanan) {
@@ -619,6 +113,78 @@ export async function FunBelanjaBarang(req, res) {
         message: `Kode barang wajib diisi untuk item "${item.nama_barang || 'item'}"!`
       });
     }
+
+    // GUARD: item harus object, field teks harus string
+    if (!item || typeof item !== 'object') {
+      return res.status(400).json({ message: "Data item tidak valid!" });
+    }
+    for (const f of ['kode_barang', 'nama_barang', 'nama_satuan', 'satuan', 'nama_satuan_bonus', 'status']) {
+      if (item[f] !== undefined && item[f] !== null && typeof item[f] !== 'string') {
+        return res.status(400).json({ message: `Field ${f} tidak valid!` });
+      }
+    }
+
+    // GUARD: batas wajar angka
+    const rasioIn = Number(item.rasio_ke_pcs) || 0;
+    const rasioBonusIn = Number(item.rasio_bonus_ke_pcs) || 0;
+    if (jumlah > 999999999 || qty_bonus > 999999999 || harga > 9999999999 || rasioIn > 1000000 || rasioBonusIn > 1000000) {
+      return res.status(400).json({
+        message: `Nilai angka untuk "${item.nama_barang || item.kode_barang || 'item'}" melebihi batas wajar!`
+      });
+    }
+
+    // GUARD: persentase (hanya jika dikirim FE)
+    for (const [f, max] of [['persentase_diskon_distributor', 100], ['persentase_fee_harga_jual', 1000]]) {
+      const raw = item[f];
+      if (raw !== undefined && raw !== null && raw !== '') {
+        const n = Number(raw);
+        if (!Number.isFinite(n) || n < 0 || n > max) {
+          return res.status(400).json({
+            message: `${f} untuk "${item.nama_barang || item.kode_barang || 'item'}" harus 0 - ${max}!`
+          });
+        }
+      }
+    }
+
+    // GUARD: khusus BARANG BARU (datanya 100% dari FE, jadi dibatasi ketat)
+    if (item.status === 'BARANG BARU') {
+      if (!String(item.nama_barang ?? '').trim()) {
+        return res.status(400).json({ message: "Nama barang baru wajib diisi!" });
+      }
+      if (jumlah <= 0) {
+        return res.status(400).json({ message: `Barang baru "${item.nama_barang}" harus dibeli lebih dari 0!` });
+      }
+      if (jumlah > 0 && harga <= 0) {
+        return res.status(400).json({ message: `Harga beli barang baru "${item.nama_barang}" wajib lebih dari 0!` });
+      }
+      const namaUtama = (item.nama_satuan || 'KARTON').toUpperCase();
+      if (!['KARTON', 'BALL'].includes(namaUtama)) {
+        return res.status(400).json({ message: `Satuan beli "${item.nama_barang}" harus KARTON atau BALL!` });
+      }
+      if (Array.isArray(item.list_satuan)) {
+        const sudahAda = new Set([namaUtama]);
+        for (const s of item.list_satuan) {
+          const nm = String(s?.nama_satuan || '').toUpperCase();
+          if (nm === namaUtama) continue;
+          if ((Number(s?.rasio_ke_pcs) || 0) <= 0 || (Number(s?.harga_jual) || 0) <= 0) continue;
+          const lvl = Number(s?.level) || 1;
+          if (lvl !== 1 && lvl !== 2) {
+            return res.status(400).json({ message: `Level satuan "${nm}" harus 1 atau 2!` });
+          }
+          if (sudahAda.has(nm)) {
+            return res.status(400).json({ message: `Satuan "${nm}" duplikat!` });
+          }
+          sudahAda.add(nm);
+        }
+      }
+    }
+
+    // GUARD: baris bonus murni (qty beli 0) tidak boleh membawa harga
+    if (jumlah <= 0 && harga > 0) {
+      return res.status(400).json({
+        message: `Barang "${item.nama_barang || item.kode_barang || 'item'}" tanpa qty beli tidak boleh punya harga!`
+      });
+    }
   }
 
   // 4. Hitung total harga & diskon faktur
@@ -632,6 +198,11 @@ export async function FunBelanjaBarang(req, res) {
     return acc + (modal_bersih * jumlah);
   }, 0);
 
+  // GUARD: diskon faktur tidak boleh lebih besar dari total harga
+  if (diskon_faktur > total_harga) {
+    return res.status(400).json({ message: "Diskon faktur tidak boleh melebihi total harga barang!" });
+  }
+
   // Rasio Diskon Faktur Murni
   const total_harga_setelah_diskon = Math.max(0, total_harga - diskon_faktur);
   const rasioFaktur = total_harga > 0 ? (total_harga_setelah_diskon / total_harga) : 1;
@@ -640,6 +211,12 @@ export async function FunBelanjaBarang(req, res) {
   const dpp_total = total_harga_setelah_diskon;
   const ppn_nominal = Math.round((dpp_total * ppn_persen) / 100);
   const grand_total = dpp_total + ppn_nominal;
+
+ 
+  // GUARD: batas wajar total belanja (kolom total_harga bertipe int, maks ~2,1 miliar)
+  if (grand_total > 2000000000 || total_harga > 2000000000) {
+    return res.status(400).json({ message: "Total belanja melebihi batas wajar!" });
+  }
 
   // [HUTANG SUPPLIER] Validasi pembayaran toko
   const rawDibayar = String(faktur?.dibayar ?? '').trim() || '0';
@@ -700,10 +277,11 @@ export async function FunBelanjaBarang(req, res) {
 
     const satuanMap = new Map();
     const persentaseExistingMap = new Map();
+    const barangDbMap = new Map();
 
     if (kodeBarangRestok.length > 0) {
       const [satuanRowsAll] = await connection.query(
-        `SELECT id, kode_barang, nama_satuan, rasio_ke_pcs FROM barang_satuan WHERE kode_barang IN (?)`,
+        `SELECT id, kode_barang, nama_satuan, rasio_ke_pcs, is_active_satuan FROM barang_satuan WHERE kode_barang IN (?)`,
         [kodeBarangRestok]
       );
       for (const row of satuanRowsAll) {
@@ -712,16 +290,63 @@ export async function FunBelanjaBarang(req, res) {
       }
 
       const [barangRowsAll] = await connection.query(
-        `SELECT kode_barang, persentase_diskon_distributor, persentase_fee_harga_jual 
+        `SELECT kode_barang, nama_barang, is_active, persentase_diskon_distributor, persentase_fee_harga_jual 
          FROM barang WHERE kode_barang IN (?)`,
         [kodeBarangRestok]
       );
       for (const row of barangRowsAll) {
+        barangDbMap.set(row.kode_barang, { nama: row.nama_barang, aktif: Number(row.is_active) === 1 });
         persentaseExistingMap.set(row.kode_barang, {
           diskon: Number(row.persentase_diskon_distributor) || 0,
           fee: Number(row.persentase_fee_harga_jual) || 0
         });
       }
+    }
+
+    // GUARD: supplier harus ada di DB & namanya cocok
+    const [supRows] = await connection.query(
+      `SELECT id_supplier, nama_supplier FROM supplier WHERE id_supplier = ?`,
+      [Number(supplier_id)]
+    );
+    if (supRows.length === 0) {
+      throw new ValidationError("Supplier tidak ditemukan di database!");
+    }
+    if (String(supRows[0].nama_supplier).trim().toUpperCase() !== String(nama_supplier).trim().toUpperCase()) {
+      throw new ValidationError("Nama supplier tidak sesuai database, muat ulang data supplier!");
+    }
+
+    // GUARD: barang restok wajib ada & aktif di DB
+    for (const kode of kodeBarangRestok) {
+      const info = barangDbMap.get(kode);
+      if (!info) {
+        throw new ValidationError(`Barang dengan kode "${kode}" tidak ditemukan di database!`);
+      }
+      if (!info.aktif) {
+        throw new ValidationError(`Barang "${info.nama}" sedang nonaktif, tidak bisa dibeli!`);
+      }
+    }
+
+    // GUARD: 'BARANG BARU' tidak boleh memakai kode yang sudah ada di DB
+    const kodeBarangBaruList = [
+      ...new Set(ListPesanan.filter((it) => it.status === 'BARANG BARU').map((it) => it.kode_barang))
+    ];
+    if (kodeBarangBaruList.length > 0) {
+      const [kodeBentrok] = await connection.query(
+        `SELECT kode_barang FROM barang WHERE kode_barang IN (?)`,
+        [kodeBarangBaruList]
+      );
+      if (kodeBentrok.length > 0) {
+        throw new ValidationError(`Kode barang "${kodeBentrok[0].kode_barang}" sudah terdaftar, tidak bisa diinput sebagai barang baru!`);
+      }
+    }
+
+    // GUARD: faktur yang sama dari supplier yang sama tidak boleh diinput dua kali
+    const [fakturAda] = await connection.query(
+      `SELECT 1 FROM pembelian_header WHERE no_faktur = ? AND supplier_id = ? LIMIT 1`,
+      [no_faktur, Number(supplier_id)]
+    );
+    if (fakturAda.length > 0) {
+      throw new ValidationError("No faktur ini sudah pernah diinput untuk supplier tersebut!");
     }
 
     // B. INSERT PEMBELIAN HEADER
@@ -809,8 +434,51 @@ export async function FunBelanjaBarang(req, res) {
 
       // TOTAL PCS MASUK = (Qty Beli x Rasio Beli) + (Qty Bonus x Rasio Bonus)
       const pcs_masuk = (jumlah_beli * rasio) + (qty_bonus * rasioBonus);
+      
+      // GUARD: batas wajar PCS masuk per baris (cegah stok_pcs meluber)
+      if (pcs_masuk > 100000000) { // 100 juta PCS, sesuaikan skala toko lu
+        throw new ValidationError(`Jumlah PCS masuk untuk "${item.nama_barang || item.kode_barang}" melebihi batas wajar!`);
+      }
+
       const namaSatuanItem = (item.nama_satuan || item.satuan || 'KARTON').toUpperCase();
       const namaSatuanBonus = (item.nama_satuan_bonus || namaSatuanItem).toUpperCase();
+
+      // GUARD: untuk RESTOK, satuan/rasio/nama harus sesuai DB (FE tidak dipercaya)
+      if (item.status !== 'BARANG BARU') {
+        const info = barangDbMap.get(item.kode_barang);
+        const kandidat = (satuanMap.get(item.kode_barang) || [])
+          .filter((r) => Number(r.is_active_satuan) === 1);
+
+        // Satuan terbesar = rasio tertinggi (sama dengan pilihan FE)
+        const barisTerbesar = [...kandidat].sort(
+          (a, b) => Number(b.rasio_ke_pcs) - Number(a.rasio_ke_pcs)
+        )[0];
+        if (!barisTerbesar) {
+          throw new ValidationError(`Satuan aktif untuk "${info?.nama || item.kode_barang}" belum terdaftar di database!`);
+        }
+
+        if (jumlah_beli > 0) {
+          if ((barisTerbesar.nama_satuan || '').toUpperCase() !== namaSatuanItem) {
+            throw new ValidationError(`Belanja "${info?.nama}" harus memakai satuan ${barisTerbesar.nama_satuan}, bukan "${namaSatuanItem}"!`);
+          }
+          if (Number(barisTerbesar.rasio_ke_pcs) !== rasio) {
+            throw new ValidationError(`Rasio satuan "${namaSatuanItem}" untuk "${info?.nama}" tidak sesuai database, muat ulang data barang!`);
+          }
+        }
+
+        if (qty_bonus > 0) {
+          const barisBonus = kandidat.find((r) => (r.nama_satuan || '').toUpperCase() === namaSatuanBonus);
+          if (!barisBonus) {
+            throw new ValidationError(`Satuan bonus "${namaSatuanBonus}" untuk "${info?.nama}" tidak terdaftar/aktif di database!`);
+          }
+          if (Number(barisBonus.rasio_ke_pcs) !== rasioBonus) {
+            throw new ValidationError(`Rasio satuan bonus "${namaSatuanBonus}" untuk "${info?.nama}" tidak sesuai database!`);
+          }
+        }
+
+        // Nama barang restok selalu dari DB
+        item.nama_barang = info?.nama ?? item.nama_barang;
+      }
 
       let diskon_dist = Number(item.persentase_diskon_distributor);
       let fee_jual = Number(item.persentase_fee_harga_jual);
@@ -823,6 +491,11 @@ export async function FunBelanjaBarang(req, res) {
 
       // Modal bersih per item
       const modal_bersih = Math.max(0, harga_satuan - Math.round((harga_satuan * diskon_dist) / 100));
+
+      // GUARD: barang yang dibeli tidak boleh bermodal 0 (cegah harga jual di DB tertimpa 0)
+      if (jumlah_beli > 0 && modal_bersih <= 0) {
+        throw new ValidationError(`Harga setelah diskon untuk "${item.nama_barang || item.kode_barang}" tidak boleh 0!`);
+      }
 
       // Modal riil setelah dipotong diskon faktur & alokasi PPN
       const modal_riil_faktur = modal_bersih * rasioFaktur;
@@ -842,7 +515,7 @@ export async function FunBelanjaBarang(req, res) {
       //   qty_bonus
       // ]);
 
-            // Row 1: barang yang dibeli (bonus TIDAK digabung lagi di sini)
+      // Row 1: barang yang dibeli (bonus TIDAK digabung lagi di sini)
       if (jumlah_beli > 0) {
         values_pembelian_detail.push([
           id_pembelian,
@@ -963,6 +636,8 @@ export async function FunBelanjaBarang(req, res) {
         saldo.set(r.kode_barang, Number(r.stok_pcs) || 0);
       }
     }
+
+
 
     // D. UPSERT KE TABEL `barang` (MASTER PARENT)
     await connection.query(
@@ -1106,6 +781,8 @@ export async function FunBelanjaBarang(req, res) {
     connection.release();
   }
 }
+
+// END PROSES BELANJA //
 
 
 

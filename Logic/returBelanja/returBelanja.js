@@ -173,7 +173,10 @@ export async function CariNoFakturPembelian(req, res) {
                 harga_retur_pcs: hargaReturPcs,
                 sisa_retur_pcs: sisaReturInPcs,
                 is_fully_returned: sisaReturInPcs <= 0,
-                satuans: listSatuans
+                satuans: listSatuans,
+                 // TAMBAHAN: penanda bonus untuk FE
+                qty_bonus: Number(row.qty_bonus) || 0,
+                is_bonus: qtyBeli === 0 && (Number(row.qty_bonus) || 0) > 0
             };
         });
 
@@ -564,7 +567,7 @@ async function rbProses(conn, { noFaktur, catatan, items }, idAdmin) {
     if (RB_TOLAK_JIKA_MELEBIHI_HUTANG && grandTotalRetur > sisaHutang) {
         throw new ReturBelanjaError(
             `Total potong hutang retur include PPN (Rp ${rbRupiah(grandTotalRetur)}) lebih besar dari sisa hutang faktur ${faktur.no_faktur} ` +
-            `(Rp ${rbRupiah(sisaHutang)}). Retur ditolak.`
+            `(Rp ${rbRupiah(sisaHutang)}). Retur ditolak. Coba ajukan tukar barang atau Refund (tunai) ke supplier`
         );
     }
 
