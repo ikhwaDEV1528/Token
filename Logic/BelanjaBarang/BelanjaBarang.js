@@ -212,7 +212,7 @@ export async function FunBelanjaBarang(req, res) {
   const ppn_nominal = Math.round((dpp_total * ppn_persen) / 100);
   const grand_total = dpp_total + ppn_nominal;
 
- 
+
   // GUARD: batas wajar total belanja (kolom total_harga bertipe int, maks ~2,1 miliar)
   if (grand_total > 2000000000 || total_harga > 2000000000) {
     return res.status(400).json({ message: "Total belanja melebihi batas wajar!" });
@@ -434,7 +434,7 @@ export async function FunBelanjaBarang(req, res) {
 
       // TOTAL PCS MASUK = (Qty Beli x Rasio Beli) + (Qty Bonus x Rasio Bonus)
       const pcs_masuk = (jumlah_beli * rasio) + (qty_bonus * rasioBonus);
-      
+
       // GUARD: batas wajar PCS masuk per baris (cegah stok_pcs meluber)
       if (pcs_masuk > 100000000) { // 100 juta PCS, sesuaikan skala toko lu
         throw new ValidationError(`Jumlah PCS masuk untuk "${item.nama_barang || item.kode_barang}" melebihi batas wajar!`);
@@ -501,8 +501,12 @@ export async function FunBelanjaBarang(req, res) {
       const modal_riil_faktur = modal_bersih * rasioFaktur;
       const subtotal = modal_bersih * jumlah_beli;
 
-      const harga_jual = Math.round(modal_bersih * (1 + (fee_jual / 100)));
-      const margin = Math.round(harga_jual - modal_bersih);
+      // const harga_jual = Math.round(modal_bersih * (1 + (fee_jual / 100)));
+      // const margin = Math.round(harga_jual - modal_bersih);
+
+      // Margin dihitung dari harga beli KOTOR (sebelum diskon), lalu ditambah ke modal bersih
+      const margin = Math.round((harga_satuan * fee_jual) / 100);
+      const harga_jual = modal_bersih + margin;
 
       // values_pembelian_detail.push([
       //   id_pembelian,
