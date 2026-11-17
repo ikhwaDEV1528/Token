@@ -763,12 +763,6 @@ export async function TAMBAHITEMFAKTUR(req, res) {
         if (sudahAda.has(kode)) {
             return res.status(400).json({ message: `Barang '${kode}' terkirim dobel, gabungkan jumlahnya.` });
         }
-        if(raw.kode_barang){
-            console.log(raw)
-            return res.status(400).json({
-                message:`Barang ini ${raw.kode_barang} sudah ada di faktur. Tambahkan melalui edit item pada faktur ${noFaktur}`
-            })
-        }
 
         sudahAda.add(kode);
         items.push({ kode, satuanInput, jumlah, diskon });
@@ -788,6 +782,23 @@ export async function TAMBAHITEMFAKTUR(req, res) {
             );
             if (headerRows.length === 0) throw tolak(404, 'Faktur tidak ditemukan!');
             const header = headerRows[0];
+
+            // 1b) GUARD: tolak jika kode barang sudah ada di faktur ini
+            const kodeDicek = items.map((i) => i.kode);
+            const [adaRows] = await conn.query(
+                `SELECT DISTINCT d.kode_barang, b.nama_barang
+                   FROM penjualan_detail d
+                   LEFT JOIN barang b ON b.kode_barang = d.kode_barang
+                  WHERE d.no_faktur = ?
+                    AND d.kode_barang IN (?)`,
+                [noFaktur, kodeDicek]
+            );
+            if (adaRows.length > 0) {
+                const daftarAda = adaRows
+                    .map((r) => `${String(r.kode_barang).trim()}${r.nama_barang ? ` (${r.nama_barang})` : ''}`)
+                    .join(', ');
+                throw tolak(409, `Barang sudah ada di faktur ${noFaktur}: ${daftarAda}. Gunakan Edit Item untuk mengubah jumlahnya.`);
+            }
 
             // 2) Data resmi satuan (harga + rasio) dan barang
             const kodeList = items.map((i) => i.kode).sort();
