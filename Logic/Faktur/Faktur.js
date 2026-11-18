@@ -256,6 +256,9 @@ async function itemSudahDiretur(conn, idDetail) {
     return rows.length > 0;
 }
 
+
+
+
 // ===========================================================================
 // HAPUS ITEM FAKTUR
 // Payload: { no_faktur, faktur: { id_detail } }
@@ -290,7 +293,7 @@ export async function HAPUSITEMFAKTUR(req, res) {
 
             // 2) Item yang dihapus (selalu dari DB)
             const [itemRows] = await conn.query(
-                `SELECT kode_barang, satuan, jumlah_keluar, total_harga, hpp_per_unit
+                `SELECT kode_barang, satuan, jumlah_keluar, qty_bonus, total_harga, hpp_per_unit
                    FROM penjualan_detail
                   WHERE id_detail = ? AND no_faktur = ?
                   FOR UPDATE`,
@@ -325,7 +328,8 @@ export async function HAPUSITEMFAKTUR(req, res) {
                 throw tolak(409,
                     `Satuan "${item.satuan}" pada item ini tidak lagi terdaftar, stok tidak bisa dikembalikan otomatis. Hubungi admin.`);
             }
-            const jumlahLama = Number(item.jumlah_keluar) || 0;
+            
+            const jumlahLama = (Number(item.jumlah_keluar) || 0) + (Number(item.qty_bonus) || 0);
             const pcsKembali = jumlahLama * satuan.rasio;
             if (!Number.isSafeInteger(pcsKembali) || pcsKembali <= 0) {
                 throw tolak(409, 'Data jumlah item tidak valid, hubungi admin.');
@@ -377,6 +381,10 @@ export async function HAPUSITEMFAKTUR(req, res) {
         return kirimError(res, err, 'HAPUSITEMFAKTUR');
     }
 }
+
+
+
+
 
 // ===========================================================================
 // EDIT ITEM FAKTUR (termasuk ganti barang)
@@ -915,6 +923,7 @@ export async function TAMBAHITEMFAKTUR(req, res) {
 // HAPUS SELURUH FAKTUR (pesanan dibatalkan)
 // Payload: { no_faktur }
 // ===========================================================================
+
 export async function HAPUSFAKTUR(req, res) {
     const idAdmin = req.id_admin ?? null;
 
@@ -1069,6 +1078,8 @@ export async function HAPUSFAKTUR(req, res) {
         return kirimError(res, err, 'HAPUSFAKTUR');
     }
 }
+
+
 
 
 export async function ubahTglPengiriman(req, res) {
