@@ -197,8 +197,8 @@ const SQL_REKAP_PENJUALAN_SALES = `
         ON bs_jual.kode_barang = pd.kode_barang
        AND bs_jual.nama_satuan = pd.satuan
       WHERE ph.sales = ?
-        AND ph.tgl_faktur >= ?
-        AND ph.tgl_faktur <  ?
+        AND ph.tanggal_pengiriman >= ?
+        AND ph.tanggal_pengiriman <  ?
       GROUP BY pd.kode_barang
 
       UNION ALL
