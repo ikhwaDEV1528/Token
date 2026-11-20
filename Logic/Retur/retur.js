@@ -1094,6 +1094,7 @@ export async function ProsesRetur(req, res) {
         if (dppPerTarif.size === 1) {
             const persenTunggal = [...dppPerTarif.keys()][0];
             if (persenTunggal > 0) {
+                
                 const [prev] = await conn.query(
                     `SELECT IFNULL(SUM(total_nominal_retur), 0) AS dpp,
                      IFNULL(SUM(ppn_nominal), 0) AS ppn

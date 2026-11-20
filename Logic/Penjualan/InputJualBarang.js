@@ -766,7 +766,16 @@ export async function AMBIL_FAKTUR_PENJUALAN(req, res) {
     // const { tanggalMulai, tanggalSelesai, page } = req.query;
     const { tanggalMulai, tanggalSelesai, page, q, status, sales } = req.query;
 
-    if (!tanggalMulai || !tanggalSelesai) {
+    // if (!tanggalMulai || !tanggalSelesai) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Parameter tanggalMulai dan tanggalSelesai wajib diisi!"
+    //   });
+    // }
+
+    // DITAMBAH: tanggal boleh kosong kalau sedang mencari berdasarkan teks (nama/kode/no faktur)
+    const adaCari = typeof q === 'string' && q.trim() !== '';
+    if ((!tanggalMulai || !tanggalSelesai) && !adaCari) {
       return res.status(400).json({
         success: false,
         message: "Parameter tanggalMulai dan tanggalSelesai wajib diisi!"
@@ -807,6 +816,11 @@ export async function AMBIL_FAKTUR_PENJUALAN(req, res) {
 
     const whereExtra = kondisi.length ? ` AND ${kondisi.join(' AND ')}` : '';
 
+    // DITAMBAH: filter tanggal dibuat opsional
+    const pakaiTanggal = Boolean(tanggalMulai && tanggalSelesai);
+    const whereTanggal = pakaiTanggal ? 'AND ph.tanggal_pengiriman BETWEEN ? AND ?' : '';
+    const paramTanggal = pakaiTanggal ? [tanggalMulai, tanggalSelesai] : [];
+
     // ─────────────────────────────────────────────────────────────
     // Query 1: Hitung TOTAL keseluruhan faktur yang match filter tanggal.
     // ─────────────────────────────────────────────────────────────
@@ -821,10 +835,10 @@ export async function AMBIL_FAKTUR_PENJUALAN(req, res) {
       SELECT COUNT(*) AS total
       FROM penjualan_header ph
       LEFT JOIN pelanggan pl ON ph.kode_pelanggan = pl.kode_pelanggan
-      WHERE ph.tanggal_pengiriman BETWEEN ? AND ? ${whereExtra}
+      WHERE 1=1 ${whereTanggal} ${whereExtra}
     `;
-    const [countRows] = await db.query(countQuery, [tanggalMulai, tanggalSelesai, ...paramFilter]);
-
+    // const [countRows] = await db.query(countQuery, [tanggalMulai, tanggalSelesai, ...paramFilter]);
+    const [countRows] = await db.query(countQuery, [...paramTanggal, ...paramFilter]);
     const totalData = countRows[0]?.total || 0;
     const totalPages = totalData > 0 ? Math.ceil(totalData / limit) : 0;
 
@@ -876,7 +890,7 @@ export async function AMBIL_FAKTUR_PENJUALAN(req, res) {
         SELECT ph.*
          FROM penjualan_header ph
          LEFT JOIN pelanggan pl ON ph.kode_pelanggan = pl.kode_pelanggan
-         WHERE ph.tanggal_pengiriman BETWEEN ? AND ? ${whereExtra}
+         WHERE 1=1 ${whereTanggal} ${whereExtra}
          ORDER BY ph.tanggal_pengiriman DESC, ph.no_faktur DESC
          LIMIT ? OFFSET ?
       ) pj
@@ -906,8 +920,7 @@ export async function AMBIL_FAKTUR_PENJUALAN(req, res) {
     `;
 
     const [rows] = await db.query(query, [
-      tanggalMulai,
-      tanggalSelesai,
+      ...paramTanggal,
       ...paramFilter,
       Number(limit),
       Number(offset)
