@@ -32,6 +32,16 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const todayWIB = () =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
 
+/** Jam saat ini (HH:mm:ss) pada zona waktu WIB. */
+const jamWIB = () =>
+  new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Jakarta",
+    hourCycle: "h23",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date());
+
 /** Validasi format & keabsahan tanggal YYYY-MM-DD. */
 const isValidDate = (s) => {
   if (typeof s !== "string" || !DATE_RE.test(s)) return false;
@@ -492,6 +502,25 @@ export async function submitDCR(req, res) {
       [fakturIds]
     );
 
+    
+    // GUARD: 1 DCR = 1 sales. Semua faktur harus milik sales yang dipilih di header.
+    const salesHeader = String(sales || "").trim();
+    if (!salesHeader) {
+      throw new ValidationError("Nama sales wajib diisi untuk DCR.");
+    }
+    const [fakturSalesRows] = await connection.query(
+      `SELECT no_faktur, sales FROM penjualan_header WHERE no_faktur IN (?)`,
+      [fakturIds]
+    );
+    const fakturLain = fakturSalesRows.filter(
+      (r) => String(r.sales || "").trim().toLowerCase() !== salesHeader.toLowerCase()
+    );
+    if (fakturLain.length > 0) {
+      throw new ValidationError(
+        `Faktur ${fakturLain.map((r) => r.no_faktur).join(", ")} bukan milik sales ${salesHeader}. 1 DCR hanya untuk 1 sales.`
+      );
+    }
+
     const fakturMap = new Map(fakturRows.map((r) => [String(r.no_faktur), r]));
     const detailToInsert = [];
     const headerToUpdate = [];
@@ -549,7 +578,7 @@ export async function submitDCR(req, res) {
       [
         no_bayar,
         kode_pelanggan || "MULTI_TOKO",
-        tglBayarValid,
+        `${tglBayarValid} ${jamWIB()}`,
         totalSetoranKeseluruhan,
         metodeBayar,
         catatanFinal,

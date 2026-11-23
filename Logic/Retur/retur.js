@@ -50,7 +50,7 @@ export async function CariNoFaktur(req, res) {
         const [rows] = await db.query(
             `SELECT
                 p.no_faktur,
-                p.tgl_faktur,
+                COALESCE(p.tanggal_pengiriman, p.tgl_faktur) AS tgl_faktur,
                 p.sales AS nama_sales,
                 IFNULL(p.diskon_global, 0) AS diskon_global_faktur,
                 pl.nama_pelanggan,
@@ -222,7 +222,7 @@ export async function CariDaftarFaktur(req, res) {
 
         const [rows] = await db.query(
             `SELECT ph.no_faktur,
-                    ph.tgl_faktur,
+                    COALESCE(ph.tanggal_pengiriman, ph.tgl_faktur) AS tgl_faktur,
                     ph.sales AS nama_sales,
                     COALESCE(pl.nama_pelanggan, ph.kode_pelanggan) AS nama_pelanggan,
                     IFNULL(ph.sisa_piutang, 0) AS sisa_piutang,
@@ -243,7 +243,7 @@ export async function CariDaftarFaktur(req, res) {
                FROM penjualan_header ph
                LEFT JOIN pelanggan pl ON ph.kode_pelanggan = pl.kode_pelanggan
               WHERE ${where.join(' AND ')}
-              ORDER BY ph.tgl_faktur DESC, ph.no_faktur DESC
+              ORDER BY COALESCE(ph.tanggal_pengiriman, ph.tgl_faktur) DESC, ph.no_faktur DESC
               LIMIT ${MAX_RESULT}`,
             params
         );
@@ -880,6 +880,26 @@ export async function ProsesRetur(req, res) {
                 });
             }
         }
+        
+ 
+        // GUARD (TAMBAHAN): retur tidak boleh dibuat sebelum hari pengiriman barang
+        const fakturCek = [...new Set([fakturAsli, ...fakturAsalList])];
+        const [kirimRows] = await conn.query(
+            `SELECT no_faktur, DATE_FORMAT(tanggal_pengiriman, '%Y-%m-%d') AS tgl_kirim
+               FROM penjualan_header
+              WHERE no_faktur IN (?) AND tanggal_pengiriman IS NOT NULL`,
+            [fakturCek]
+        );
+        const hariIniWIB = waktu.sql.slice(0, 10);
+        for (const k of kirimRows) {
+            if (hariIniWIB < k.tgl_kirim) {
+                throw new ValidationError(
+                    `Retur ditolak! Faktur ${k.no_faktur} dijadwalkan dikirim tanggal ${k.tgl_kirim}. ` +
+                    `Retur baru boleh dibuat mulai tanggal pengiriman.`
+                );
+            }
+        }
+        
 
         // 3. HEADER RETUR ----------------------------------------------------
         const noRetur = await generateNoRetur(conn, waktu.yyyymmdd);
@@ -1335,6 +1355,216 @@ export async function ProsesRetur(req, res) {
             status: false,
             message: 'Terjadi kesalahan sistem saat memproses retur. Silakan coba lagi atau hubungi admin.'
         });
+    } finally {
+        if (conn) conn.release();
+    }
+}
+
+
+
+
+
+// ===== ENDPOINT 4: HAPUS RETUR (UNDO) =====
+// POST body: { id_retur, alasan }
+// 0 = hanya retur yang dibuat HARI INI (WIB) yang boleh dihapus. Naikkan kalau perlu.
+const MAX_HARI_HAPUS = 0;
+
+export async function HapusRetur(req, res) {
+    const idRetur = toInt(req.body?.id_retur);
+    const alasan = String(req.body?.alasan ?? '').trim();
+    if (!Number.isSafeInteger(idRetur) || idRetur <= 0) {
+        return res.status(400).json({ status: false, message: 'ID retur tidak valid!' });
+    }
+    if (alasan.length < 3 || alasan.length > 255) {
+        return res.status(400).json({ status: false, message: 'Alasan hapus wajib diisi (3-255 karakter)!' });
+    }
+
+    const waktu = getWaktuWIBParts();
+    const idAdmin = req.id_admin ? String(req.id_admin).slice(0, 50) : null;
+    const batasTanggal = new Date(Date.now() + 7 * 3600 * 1000 - MAX_HARI_HAPUS * 86400000)
+        .toISOString().slice(0, 10);
+    let conn;
+
+    try {
+        conn = await db.getConnection();
+        await conn.query('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+        await conn.beginTransaction();
+
+        // 1. Urutan lock sama dengan ProsesRetur: faktur tujuan dulu
+        const [h0] = await conn.query(`SELECT no_faktur FROM retur_header WHERE id = ?`, [idRetur]);
+        if (h0.length === 0) throw new ValidationError('Data retur tidak ditemukan (mungkin sudah dihapus).', 404);
+
+        const [fRows] = await conn.query(
+            `SELECT no_faktur, sisa_piutang, status,
+                    IFNULL(grand_total, IFNULL(total_harga, 0)) AS grand_total
+               FROM penjualan_header WHERE no_faktur = ? FOR UPDATE`,
+            [h0[0].no_faktur]
+        );
+        if (fRows.length === 0) throw new ValidationError('Faktur tujuan retur tidak ditemukan!', 404);
+        const faktur = fRows[0];
+
+        const [hRows] = await conn.query(
+            `SELECT *, DATE_FORMAT(tanggal_retur, '%Y-%m-%d %H:%i:%s') AS tgl
+               FROM retur_header WHERE id = ? FOR UPDATE`,
+            [idRetur]
+        );
+        if (hRows.length === 0) throw new ValidationError('Data retur tidak ditemukan (mungkin sudah dihapus).', 404);
+        const h = hRows[0];
+        const noRetur = h.no_retur;
+
+        // 2. Guard batas waktu
+        if (String(h.tgl).slice(0, 10) < batasTanggal) {
+            throw new ValidationError(
+                `Retur ${noRetur} dibuat tanggal ${String(h.tgl).slice(0, 10)}, sudah lewat batas hapus. ` +
+                `Hubungi admin untuk koreksi.`, 403
+            );
+        }
+
+        // 3. Guard refund yang uangnya sudah diserahkan (selesaikanRefund menolkan jumlah_refund_kas)
+        if (h.metode_penyelesaian === 'REFUND' && Number(h.jumlah_refund_kas) <= 0 && Number(h.grand_total) > 0) {
+            throw new ValidationError(
+                `Retur ${noRetur} metode REFUND dan uang refund sudah diserahkan ke pelanggan. Tidak bisa dihapus.`, 409
+            );
+        }
+
+        // 4. Data terkait
+        const [detailRows] = await conn.query(`SELECT * FROM retur_detail WHERE retur_id = ?`, [idRetur]);
+        const [logRows] = await conn.query(
+            `SELECT * FROM stok_log
+              WHERE referensi_tipe = 'RETUR_PENJUALAN' AND referensi_no = ?
+              ORDER BY id_stok FOR UPDATE`,
+            [noRetur]
+        );
+        const [afkirRows] = await conn.query(
+            `SELECT * FROM barang_afkir WHERE no_ref_retur = ? FOR UPDATE`, [noRetur]
+        );
+
+        // 5. Guard afkir: harus belum disentuh sama sekali
+        if (afkirRows.length > 0) {
+            const idsAfkir = afkirRows.map(a => a.id_afkir);
+            const [alok] = await conn.query(
+                `SELECT COUNT(*) AS n FROM barang_afkir_alokasi WHERE id_afkir IN (?)`, [idsAfkir]
+            );
+            const terpakai = Number(alok[0].n) > 0 ||
+                afkirRows.some(a => Number(a.qty_sisa) !== Number(a.qty_pcs));
+            if (terpakai) {
+                throw new ValidationError(
+                    `Barang afkir dari retur ${noRetur} sudah dipakai/dijual/dimusnahkan. Retur tidak bisa dihapus.`, 409
+                );
+            }
+        }
+
+        // 6. Stok: balik semua qty_perubahan yang dulu tercatat
+        const net = new Map(); // kode -> total perubahan stok yang dulu terjadi
+        for (const r of logRows) net.set(r.kode_barang, (net.get(r.kode_barang) || 0) + Number(r.qty_perubahan || 0));
+
+        const kodeStok = [...net.keys()].sort();
+        const saldo = new Map();
+        if (kodeStok.length > 0) {
+            const [stokRows] = await conn.query(
+                `SELECT kode_barang, stok_pcs FROM barang WHERE kode_barang IN (?) ORDER BY kode_barang FOR UPDATE`,
+                [kodeStok]
+            );
+            for (const s of stokRows) saldo.set(s.kode_barang, Number(s.stok_pcs) || 0);
+
+            for (const kode of kodeStok) {
+                if (!saldo.has(kode)) throw new ValidationError(`Barang [${kode}] tidak ditemukan di master barang!`);
+                const n = net.get(kode);
+                if (n > 0 && saldo.get(kode) - n < 0) {
+                    throw new ValidationError(
+                        `Tidak bisa hapus retur: stok barang [${kode}] sekarang ${saldo.get(kode)} PCS, ` +
+                        `kurang dari ${n} PCS yang dulu dimasukkan oleh retur ini (sudah terjual/keluar).`, 409
+                    );
+                }
+            }
+            for (const kode of kodeStok) {
+                const n = net.get(kode);
+                if (n === 0) continue;
+                const [u] = await conn.query(
+                    `UPDATE barang SET stok_pcs = stok_pcs - ? WHERE kode_barang = ?`, [n, kode]
+                );
+                if (u.affectedRows !== 1) throw new ValidationError(`Barang [${kode}] tidak ditemukan di master barang!`);
+            }
+
+            // baris pembalik (stok_log asli TIDAK dihapus supaya saldo berjalan tetap nyambung)
+            for (const r of logRows) {
+                const delta = -Number(r.qty_perubahan || 0);
+                const awal = saldo.get(r.kode_barang);
+                const akhir = awal + delta;
+                saldo.set(r.kode_barang, akhir);
+                await conn.query(
+                    `INSERT INTO stok_log (
+                        tanggal, kode_barang, stok_awal, pembelian, penjualan, stok_akhir,
+                        jenis_transaksi, kondisi, jumlah, qty_perubahan, satuan_input, qty_input,
+                        referensi_tipe, referensi_no, referensi_id, hpp_per_pcs, keterangan, dibuat_oleh, created_at
+                    ) VALUES (?, ?, ?, 0, 0, ?, 'BATAL_RETUR_PENJUALAN', ?, ?, ?, ?, ?,
+                              'BATAL_RETUR_PENJUALAN', ?, ?, NULL, ?, ?, ?)`,
+                    [
+                        waktu.sql, r.kode_barang, awal, akhir, r.kondisi, r.jumlah, delta,
+                        r.satuan_input, r.qty_input, noRetur, r.referensi_id,
+                        `Batal retur ${noRetur}: ${alasan}`.slice(0, 255), idAdmin, waktu.sql
+                    ]
+                );
+            }
+        }
+
+        // 7. Piutang: kembalikan nominal yang dulu dipotong
+        const potong = Number(h.jumlah_potong_piutang) || 0;
+        let sisaBaru = Number(faktur.sisa_piutang) || 0;
+        if (potong > 0) {
+            sisaBaru += potong;
+            if (sisaBaru > Number(faktur.grand_total)) {
+                throw new ValidationError(
+                    `Tidak bisa hapus: sisa piutang faktur ${faktur.no_faktur} akan menjadi Rp ${rupiah(sisaBaru)}, ` +
+                    `melebihi total faktur Rp ${rupiah(faktur.grand_total)}. Data faktur perlu dicek.`, 409
+                );
+            }
+            await conn.query(`UPDATE penjualan_header SET sisa_piutang = sisa_piutang + ? WHERE no_faktur = ?`,
+                [potong, faktur.no_faktur]);
+            if (sisaBaru > 0 && String(faktur.status || '').trim().toUpperCase() === 'LUNAS') {
+                await conn.query(`UPDATE penjualan_header SET status = 'PIUTANG' WHERE no_faktur = ?`, [faktur.no_faktur]);
+            }
+        }
+
+        // 8. Simpan snapshot lalu hapus (urutan: anak dulu)
+        await conn.query(
+            `INSERT INTO retur_hapus_log
+               (id_retur_lama, no_retur, no_faktur, alasan, dihapus_oleh, dihapus_pada, snapshot)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [idRetur, noRetur, h.no_faktur, alasan, idAdmin, waktu.sql,
+             JSON.stringify({ header: h, detail: detailRows, stok_log: logRows, afkir: afkirRows })]
+        );
+
+        if (afkirRows.length > 0) {
+            await conn.query(`DELETE FROM barang_afkir WHERE id_afkir IN (?)`, [afkirRows.map(a => a.id_afkir)]);
+        }
+        await conn.query(`DELETE FROM retur_detail WHERE retur_id = ?`, [idRetur]);
+        const [del] = await conn.query(`DELETE FROM retur_header WHERE id = ?`, [idRetur]);
+        if (del.affectedRows !== 1) throw new Error('Gagal menghapus header retur');
+
+        await conn.commit();
+
+        return res.status(200).json({
+            status: true,
+            message: `Retur ${noRetur} berhasil dibatalkan.`,
+            data: {
+                no_retur: noRetur,
+                piutang_dikembalikan: potong,
+                sisa_piutang_sekarang: sisaBaru,
+                perlu_kembalikan_kas_manual: h.metode_penyelesaian === 'REFUND' && Number(h.jumlah_refund_kas) > 0
+                    ? Number(h.jumlah_refund_kas) : 0
+            }
+        });
+    } catch (err) {
+        if (conn) { try { await conn.rollback(); } catch (e) { console.error('[HapusRetur] Rollback gagal:', e); } }
+        if (err instanceof ValidationError) {
+            return res.status(err.status).json({ status: false, message: err.message });
+        }
+        if (err && (err.code === 'ER_LOCK_DEADLOCK' || err.code === 'ER_LOCK_WAIT_TIMEOUT')) {
+            return res.status(409).json({ status: false, message: 'Sistem sedang memproses transaksi lain. Silakan coba lagi.' });
+        }
+        console.error('[HapusRetur] Unexpected error:', err);
+        return res.status(500).json({ status: false, message: 'Terjadi kesalahan sistem saat membatalkan retur.' });
     } finally {
         if (conn) conn.release();
     }

@@ -155,6 +155,18 @@ const SQL_REKAP_PENJUALAN_SALES = `
           OR UPPER(bs.nama_satuan) LIKE '%BOKS%')
     ), 0) AS rasio_pack,
 
+    (
+      SELECT bs.nama_satuan FROM barang_satuan bs
+      WHERE bs.kode_barang = m.kode_barang AND bs.rasio_ke_pcs > 1
+      ORDER BY bs.rasio_ke_pcs DESC, bs.nama_satuan ASC
+      LIMIT 1
+    ) AS satuan_besar_nama,
+
+    COALESCE((
+      SELECT MAX(bs.rasio_ke_pcs) FROM barang_satuan bs
+      WHERE bs.kode_barang = m.kode_barang AND bs.rasio_ke_pcs > 1
+    ), 0) AS satuan_besar_rasio,
+
     m.qty_bulat                  AS total_qty_bulat,
     m.qty_retur_pcs              AS total_qty_retur_pcs,
     m.qty_pcs_net                AS jumlah_barang_pcs,
@@ -283,6 +295,8 @@ export async function GET_PENJUALAN_SALES(req, res) {
         nama_barang: item.nama_barang,
         rasio_karton: toNumber(item.rasio_karton),
         rasio_pack: toNumber(item.rasio_pack),
+        satuan_besar_nama: item.satuan_besar_nama ?? null,
+        satuan_besar_rasio: toNumber(item.satuan_besar_rasio),
         total_qty_bulat: totalQtyBulatItem,
         total_qty_retur_pcs: roundQty(toNumber(item.total_qty_retur_pcs)),
         jumlah_barang_pcs: jumlahBarangPcs,

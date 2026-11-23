@@ -36,7 +36,8 @@ const MAX_LEN_KATEGORI_FILTER = 50;
 const MIN_LEN_ALASAN = 5;
 const MAX_LEN_ALASAN = 255;
 const MAX_BACKDATE_HARI = 366;          // input beban maksimal 1 tahun ke belakang
-const TOLERANSI_FUTURE_MENIT = 5;       // selisih jam perangkat yang masih dimaafkan
+// const TOLERANSI_FUTURE_MENIT = 5;       // selisih jam perangkat yang masih dimaafkan
+const MAX_FUTURE_HARI = 31;             // beban boleh dicatat maksimal 31 hari ke depan
 const MAX_RENTANG_HARI = 3660;          // batas rentang filter tanggal (10 tahun)
 
 const METODE_VALID = ['TUNAI', 'TRANSFER'];
@@ -47,7 +48,7 @@ const STATUS_FILTER_VALID = ['AKTIF', 'BATAL', 'SEMUA'];
 const KATEGORI_BEBAN = [
     { kode: 'GAJI_KARYAWAN', label: 'Gaji Karyawan' },
     { kode: 'LISTRIK_AIR', label: 'Listrik & Air' },
-     { kode: 'BEBAN RETUR', label: 'BEBAN RETUR' },
+    { kode: 'BEBAN RETUR', label: 'BEBAN RETUR' },
     { kode: 'SEWA_TEMPAT', label: 'Sewa Tempat' },
     { kode: 'BENSIN_TRANSPORT', label: 'Bensin & Transport' },
     { kode: 'PERBAIKAN_PERAWATAN', label: 'Perbaikan & Perawatan' },
@@ -307,6 +308,7 @@ export async function KATEGORI_OPERASIONAL(req, res) {
                     max_keterangan: MAX_LEN_KETERANGAN,
                     max_no_bukti: MAX_LEN_NO_BUKTI,
                     max_backdate_hari: MAX_BACKDATE_HARI,
+                    max_future_hari: MAX_FUTURE_HARI,
                     min_alasan_batal: MIN_LEN_ALASAN,
                     max_alasan_batal: MAX_LEN_ALASAN
                 }
@@ -341,8 +343,8 @@ function parseTambah(body, sekarang) {
 
     const waktu = parseTanggalWaktu(str(b.tanggal).trim());
     if (!waktu) throw new OperasionalError('Tanggal & jam tidak valid!');
-    if (waktu.ms > sekarang.ms + TOLERANSI_FUTURE_MENIT * 60_000) {
-        throw new OperasionalError('Tanggal beban tidak boleh di masa depan!');
+    if (waktu.ms > sekarang.ms + MAX_FUTURE_HARI * 86_400_000) {
+        throw new OperasionalError(`Tanggal beban maksimal ${MAX_FUTURE_HARI} hari ke depan!`);
     }
     if (waktu.ms < sekarang.ms - MAX_BACKDATE_HARI * 86_400_000) {
         throw new OperasionalError(`Tanggal beban maksimal ${MAX_BACKDATE_HARI} hari ke belakang!`);
@@ -409,7 +411,7 @@ export async function TAMBAH_OPERASIONAL(req, res) {
                      status, dibuat_oleh, created_at, request_id)
                  VALUES (?, ?, ?, ?, ?, ?, 'AKTIF', ?, ?, ?)`,
                 [p.tanggalSql, p.kategori, p.keterangan, p.noBukti, p.jumlah, p.metode,
-                 admin, sekarang.sql, p.requestId]
+                    admin, sekarang.sql, p.requestId]
             );
             insertId = r.insertId;
         } catch (err) {
